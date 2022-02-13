@@ -1,0 +1,25 @@
+[package]
+name = "selectme"
+version = "0.1.0"
+authors = ["John-John Tedro <udoprog@tedro.se>"]
+edition = "2021"
+license = "MIT/Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/udoprog/selectme"
+homepage = "https://github.com/udoprog/selectme"
+documentation = "https://docs.rs/selectme"
+description = """
+A fast and fair select! macro for async Rust.
+"""
+categories = ["asynchronous", "concurrency"]
+
+[dependencies]
+selectme-macros = { path = "selectme-macros", version = "0.1.0" }
+
+[dev-dependencies]
+tokio = { version = "1.16.1", features = ["macros", "time", "rt", "rt-multi-thread"] }
+
+[workspace]
+members = [
+    "selectme-macros"
+]
