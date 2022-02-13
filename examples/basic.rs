@@ -16,13 +16,13 @@ pub async fn main() {
         let output = select! {
             () = &mut s1 if !s1_done => {
                 s1_done = true;
-                1u32
+                None
             }
-            _ = s2.tick() => {
-                2u32
+            mut instant = s2.tick() => {
+                instant = tokio::time::Instant::now();
+                Some(instant)
             }
-        }
-        .await;
+        };
 
         dbg!(output);
     }

@@ -23,14 +23,21 @@ use self::atomic_waker::AtomicWaker;
 use self::set::{Set, Snapshot};
 
 pub struct Select<T, F, O> {
-    poller: Poller<O>,
+    /// Reference to the static waker associated with the poller.
+    waker: &'static StaticWaker,
+    /// A snapshot of the bitset for the current things that needs polling.
+    snapshot: Snapshot,
+    /// Captured futures.
     futures: F,
+    /// Polling function.
     poll: T,
+    /// Marker indicating the output type.
+    _marker: marker::PhantomData<O>,
 }
 
 impl<T, F, O> Select<T, F, O>
 where
-    T: FnMut(&mut Context<'_>, Pin<&mut F>, &mut Poller<O>) -> Poll<O>,
+    T: FnMut(&mut Context<'_>, Pin<&mut F>, usize) -> Poll<O>,
 {
     /// Wait for one of the select branches to complete in a [Select] which is
     /// [Unpin].
@@ -39,6 +46,12 @@ where
         Self: Unpin,
     {
         Pin::new(self).next_pinned().await
+    }
+
+    /// Merge waker into current set.
+    fn merge_from_shared(&mut self) {
+        let snapshot = self.waker.set.take();
+        self.snapshot.merge(snapshot);
     }
 
     /// Wait for one of the select branches to complete in a pinned select.
@@ -50,16 +63,25 @@ where
     fn inner_poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<O> {
         unsafe {
             let this = self.get_unchecked_mut();
-            this.poller.merge_from_shared();
-            let futures = Pin::new_unchecked(&mut this.futures);
-            (this.poll)(cx, futures, &mut this.poller)
+            this.merge_from_shared();
+            let mut futures = Pin::new_unchecked(&mut this.futures);
+
+            this.waker.parent.register(cx.waker());
+
+            while let Some(index) = this.snapshot.next() {
+                if let Poll::Ready(output) = (this.poll)(cx, futures.as_mut(), index as usize) {
+                    return Poll::Ready(output);
+                }
+            }
+
+            Poll::Pending
         }
     }
 }
 
 impl<T, F, O> Future for Select<T, F, O>
 where
-    T: FnMut(&mut Context<'_>, Pin<&mut F>, &mut Poller<O>) -> Poll<O>,
+    T: FnMut(&mut Context<'_>, Pin<&mut F>, usize) -> Poll<O>,
 {
     type Output = O;
 
@@ -75,7 +97,7 @@ pub struct Next<'a, T> {
 
 impl<T, F, O> Future for Next<'_, Select<T, F, O>>
 where
-    T: FnMut(&mut Context<'_>, Pin<&mut F>, &mut Poller<O>) -> Poll<O>,
+    T: FnMut(&mut Context<'_>, Pin<&mut F>, usize) -> Poll<O>,
 {
     type Output = O;
 
@@ -89,65 +111,7 @@ where
     }
 }
 
-pub struct Poller<O> {
-    /// Reference to the static waker associated with the poller.
-    waker: &'static StaticWaker,
-    /// A snapshot of the bitset for the current things that needs polling.
-    snapshot: Snapshot,
-    /// Marker indicating the output type.
-    _marker: marker::PhantomData<O>,
-}
-
-impl<O> Poller<O> {
-    /// Construct a new empty poller.
-    fn new(waker: &'static StaticWaker) -> Self {
-        let snapshot = waker.set.take();
-
-        Self {
-            waker,
-            snapshot,
-            _marker: marker::PhantomData,
-        }
-    }
-
-    /// Merge waker into current set.
-    fn merge_from_shared(&mut self) {
-        let snapshot = self.waker.set.take();
-        self.snapshot.merge(snapshot);
-    }
-
-    /// Iterate over the bits that are set.
-    pub fn next(&mut self) -> Option<u32> {
-        self.snapshot.next()
-    }
-
-    /// Poll the current poller.
-    pub fn poll<T, U>(
-        &mut self,
-        cx: &mut Context<'_>,
-        waker: &'static PollerWaker,
-        poll: T,
-    ) -> Poll<U>
-    where
-        T: FnOnce(&mut Context<'_>) -> Poll<U>,
-    {
-        self.waker.parent.register(cx.waker());
-
-        let output = {
-            let waker = unsafe {
-                let waker = RawWaker::new(waker as *const _ as *const (), POLLER_WAKER_VTABLE);
-                Waker::from_raw(waker)
-            };
-
-            let mut cx = Context::from_waker(&waker);
-            poll(&mut cx)
-        };
-
-        output
-    }
-}
-
-impl<O> Drop for Poller<O> {
+impl<T, F, O> Drop for Select<T, F, O> {
     fn drop(&mut self) {
         self.waker.set.merge(self.snapshot);
     }
@@ -156,12 +120,30 @@ impl<O> Drop for Poller<O> {
 /// Construct a new polling context from a custom function.
 pub fn select<T, F, O>(waker: &'static StaticWaker, futures: F, poll: T) -> Select<T, F, O>
 where
-    T: FnMut(&mut Context<'_>, Pin<&mut F>, &mut Poller<O>) -> Poll<O>,
+    T: FnMut(&mut Context<'_>, Pin<&mut F>, usize) -> Poll<O>,
 {
+    let snapshot = waker.set.take();
+
     Select {
-        poller: Poller::new(waker),
+        waker,
+        snapshot,
         futures,
         poll,
+        _marker: marker::PhantomData,
+    }
+}
+
+/// Poll the given task using the given waker.
+#[doc(hidden)]
+pub fn poll_by_ref<T, O>(waker: &'static PollerWaker, f: T) -> Poll<O>
+where
+    T: FnOnce(&mut Context<'_>) -> Poll<O>,
+{
+    unsafe {
+        let waker = RawWaker::new(waker as *const _ as *const (), POLLER_WAKER_VTABLE);
+        let waker = Waker::from_raw(waker);
+        let mut cx = Context::from_waker(&waker);
+        f(&mut cx)
     }
 }
 

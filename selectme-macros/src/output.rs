@@ -1,9 +1,52 @@
 use proc_macro::{Delimiter, Span, TokenTree};
 
 use crate::parser::Branch;
-use crate::to_tokens::{braced, from_fn, parens, string, ToTokens};
+use crate::to_tokens::{braced, bracketed, from_fn, parens, string, ToTokens};
 use crate::tok::{self, S};
 use crate::token_stream::TokenStream;
+
+fn clean_pattern<'a>(tree: impl Iterator<Item = TokenTree> + 'a) -> impl ToTokens + 'a {
+    from_fn(move |stream, span| {
+        for tt in tree {
+            match tt {
+                TokenTree::Group(g) => {
+                    let checkpoint = stream.checkpoint();
+                    clean_pattern(g.stream().into_iter()).to_tokens(stream, span);
+                    stream.group(span, g.delimiter(), checkpoint);
+                }
+                TokenTree::Ident(i) => {
+                    if i.to_string() == "mut" {
+                        continue;
+                    }
+
+                    stream.push(TokenTree::Ident(i));
+                }
+                TokenTree::Punct(p) => {
+                    if p.as_char() == '&' {
+                        continue;
+                    }
+
+                    stream.push(TokenTree::Punct(p));
+                }
+                tt => {
+                    stream.push(tt);
+                }
+            }
+        }
+    })
+}
+
+fn generics(branches: &[Branch]) -> impl ToTokens + '_ {
+    from_fn(move |stream, span| {
+        stream.tokens(span, '<');
+
+        for b in branches {
+            stream.tokens(span, (b.generic.as_ref(), ','));
+        }
+
+        stream.tokens(span, '>');
+    })
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Prefix {
@@ -40,30 +83,47 @@ impl Output {
     /// Private module declaration.
     fn private_mod(&self) -> impl ToTokens + '_ {
         from_fn(move |stream, span| {
-            let poller_waker = (self.prefix, "PollerWaker");
-            let static_waker = (self.prefix, "StaticWaker");
+            let poller = (self.prefix, "PollerWaker");
+            let static_ = (self.prefix, "StaticWaker");
 
             let private_mod = braced(from_fn(|stream, _| {
                 stream.tokens(
                     span,
                     (
-                        ("pub", "static", "WAKER", ':', static_waker),
+                        ("pub", "static", "WAKER", ':', static_),
                         '=',
-                        (static_waker, S, "new", parens(())),
+                        (static_, S, "new", parens(())),
                         ';',
                     ),
                 );
 
-                for (n, block) in self.branches.iter().enumerate() {
+                for b in &self.branches {
                     stream.tokens(
                         span,
                         (
-                            ("pub", "static", block.waker.as_ref(), ':', poller_waker),
+                            ("pub", "static", b.waker.as_ref(), ':', poller),
                             '=',
-                            (poller_waker, S, "new", parens(('&', "WAKER", ',', n)), ';'),
+                            (poller, S, "new", parens(('&', "WAKER", ',', b.index)), ';'),
                         ),
                     );
                 }
+
+                let enum_body = from_fn(|stream, span| {
+                    for b in &self.branches {
+                        stream.tokens(span, (b.variant.as_ref(), parens(b.generic.as_ref()), ','));
+                    }
+                });
+
+                stream.tokens(
+                    span,
+                    (
+                        "pub",
+                        "enum",
+                        "Output",
+                        generics(&self.branches),
+                        braced(enum_body),
+                    ),
+                );
             }));
 
             stream.tokens(span, ("mod", "private", private_mod));
@@ -97,7 +157,7 @@ impl Output {
 
     fn match_body(&self) -> impl ToTokens + '_ {
         from_fn(|stream, span| {
-            for (n, b) in self.branches.iter().enumerate() {
+            for b in &self.branches {
                 let fut = (
                     "unsafe",
                     braced((
@@ -107,15 +167,12 @@ impl Output {
                         parens((
                             tok::as_mut("__fut"),
                             ',',
-                            tok::piped("f"),
-                            '&',
-                            "mut",
-                            "f",
-                            '.',
-                            n,
+                            (tok::piped("f"), '&', "mut", "f", '.', b.index),
                         )),
                     )),
                 );
+
+                stream.tokens(span, (b.index, tok::ROCKET));
 
                 if b.condition.is_some() || b.fuse {
                     let assign = ("let", "mut", b.pin.as_ref(), '=', fut, ';');
@@ -133,11 +190,11 @@ impl Output {
                         braced(poll),
                     );
 
-                    stream.tokens(span, (n, tok::ROCKET, braced((assign, poll))));
+                    stream.tokens(span, braced((assign, poll)));
                 } else {
                     let assign = ("let", "__fut", '=', fut, ';');
                     let poll = self.poll(b, None);
-                    stream.tokens(span, (n, tok::ROCKET, braced((assign, poll))));
+                    stream.tokens(span, braced((assign, poll)));
                 }
             }
 
@@ -152,34 +209,44 @@ impl Output {
     }
 
     fn poll<'a>(&'a self, b: &'a Branch, unset: Option<&'a str>) -> impl ToTokens + 'a {
+        let inner_poll = ("Future", S, "poll", parens(("__fut", ',', "cx")));
+
         (
-            (
-                "if",
-                "let",
-                tok::Poll::Ready(&self.tokens[b.binding.clone()]),
-            ),
+            ("if", "let", tok::Poll::Ready("out")),
             '=',
             (
-                "poller",
-                '.',
-                "poll",
+                self.prefix,
+                "poll_by_ref",
                 parens((
-                    "cx",
+                    '&',
+                    "private",
+                    S,
+                    b.waker.as_ref(),
                     ',',
-                    ('&', "private", S, b.waker.as_ref()),
-                    ',',
-                    (
-                        tok::piped("cx"),
-                        ("Future", S, "poll", parens(("__fut", ',', "cx"))),
-                    ),
+                    tok::piped("cx"),
+                    inner_poll,
                 )),
             ),
             braced((
                 unset.map(|var| (var, '.', "set", parens(tok::Option::<()>::None), ';')),
-                "return",
-                tok::Poll::Ready((
-                    parens((tok::piped(()), &self.tokens[b.branch.clone()])),
-                    parens(()),
+                ('#', bracketed(("allow", parens("unused_variables")))),
+                (
+                    "if",
+                    "let",
+                    clean_pattern(self.tokens[b.binding.clone()].iter().cloned()),
+                ),
+                '=',
+                ('&', "out"),
+                braced((
+                    "return",
+                    tok::Poll::Ready((
+                        "private",
+                        S,
+                        "Output",
+                        S,
+                        b.variant.as_ref(),
+                        parens("out"),
+                    )),
                 )),
             )),
         )
@@ -205,7 +272,7 @@ impl ToTokens for Output {
 
         let mut reset_base = 0;
 
-        for (n, b) in self.branches.iter().enumerate() {
+        for b in &self.branches {
             match &b.condition {
                 Some(c) => {
                     stream.tokens(
@@ -220,7 +287,7 @@ impl ToTokens for Output {
                     );
                 }
                 None => {
-                    reset_base += 1 << n;
+                    reset_base += 1 << b.index;
                 }
             }
         }
@@ -252,13 +319,7 @@ impl ToTokens for Output {
 
         stream.tokens(span, (private, "WAKER", '.', "reset", parens(args), ';'));
 
-        let loop_item = (
-            ("while", "let", tok::Option::Some("index")),
-            '=',
-            ("poller", '.', "next", parens(())),
-            braced(("match", "index", braced(self.match_body()))),
-        );
-
+        let loop_item = ("match", "index", braced(self.match_body()));
         let body = braced((loop_item, tok::Poll::<()>::Pending));
 
         let select_args = parens((
@@ -266,11 +327,31 @@ impl ToTokens for Output {
             ',',
             "__fut",
             ',',
-            tok::piped(("cx", ',', "mut", "__fut", ',', "poller")),
+            tok::piped(("cx", ',', "mut", "__fut", ',', "index")),
             body,
         ));
 
-        stream.tokens(span, (select, select_args));
+        let body = from_fn(|stream, span| {
+            for b in &self.branches {
+                stream.tokens(span, ("private", S, "Output", S, b.variant.as_ref()));
+                stream.tokens(span, parens(&self.tokens[b.binding.clone()]));
+                stream.tokens(span, tok::ROCKET);
+                stream.tokens(span, &self.tokens[b.branch.clone()]);
+            }
+
+            let panic_ = (
+                "unreachable",
+                '!',
+                parens(string("branch cannot be reached")),
+            );
+
+            stream.tokens(span, ("_", tok::ROCKET, braced(panic_)));
+        });
+
+        stream.tokens(
+            span,
+            ("match", select, select_args, '.', "await", braced(body)),
+        );
         stream.group(span, Delimiter::Brace, start);
     }
 }

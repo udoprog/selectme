@@ -217,6 +217,8 @@ impl Parser {
             branch,
             waker: format!("WAKER{}", index).into(),
             pin: format!("__fut{}", index).into(),
+            generic: format!("T{}", index).into(),
+            variant: format!("Branch{}", index).into(),
             condition,
         };
 
@@ -307,13 +309,20 @@ pub struct Branch {
     pub index: usize,
     /// If the branch should automatically fuse.
     pub fuse: bool,
+    /// Range for the binding to use.
     pub binding: ops::Range<usize>,
+    /// Range for the expression to be evaluated as a future.
     pub expr: ops::Range<usize>,
+    /// Range for the branch.
     pub branch: ops::Range<usize>,
     /// The name of the child waker for this block.
     pub waker: Box<str>,
     /// The name of the pin variable.
     pub pin: Box<str>,
+    /// The name of the generic used by the branch.
+    pub generic: Box<str>,
+    /// The name of the enum variant use by this branch.
+    pub variant: Box<str>,
     /// Branch condition.
     pub condition: Option<Condition>,
 }

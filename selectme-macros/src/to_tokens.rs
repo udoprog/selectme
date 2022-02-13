@@ -121,6 +121,14 @@ where
     Group(Delimiter::Brace, inner)
 }
 
+/// Construct a bracketed group.
+pub fn bracketed<T>(inner: T) -> impl ToTokens
+where
+    T: ToTokens,
+{
+    Group(Delimiter::Bracket, inner)
+}
+
 struct StringLiteral<'a>(&'a str);
 
 impl ToTokens for StringLiteral<'_> {
