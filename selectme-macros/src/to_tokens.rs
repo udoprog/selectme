@@ -35,16 +35,15 @@ impl ToTokens for &str {
 impl<const N: usize> ToTokens for [char; N] {
     fn to_tokens(self, stream: &mut TokenStream, span: Span) {
         let mut it = self.into_iter();
-        let last = it.next_back();
 
-        while let Some(c) = it.next() {
-            let mut punct = Punct::new(c, Spacing::Joint);
-            punct.set_span(span);
-            stream.push(TokenTree::Punct(punct));
-        }
+        if let Some(last) = it.next_back() {
+            for c in it {
+                let mut punct = Punct::new(c, Spacing::Joint);
+                punct.set_span(span);
+                stream.push(TokenTree::Punct(punct));
+            }
 
-        if let Some(c) = last {
-            let mut punct = Punct::new(c, Spacing::Alone);
+            let mut punct = Punct::new(last, Spacing::Alone);
             punct.set_span(span);
             stream.push(TokenTree::Punct(punct));
         }

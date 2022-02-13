@@ -1,6 +1,6 @@
 use proc_macro::{Delimiter, Span, TokenTree};
 
-use crate::parser::Branch;
+use crate::parser::{Branch, Else};
 use crate::to_tokens::{braced, bracketed, from_fn, parens, string, ToTokens};
 use crate::tok::{self, S};
 use crate::token_stream::TokenStream;
@@ -12,15 +12,22 @@ const OUT: &str = "Out";
 pub struct Output {
     tokens: Vec<TokenTree>,
     branches: Vec<Branch>,
+    else_branch: Option<Else>,
     prefix: Prefix,
 }
 
 impl Output {
     /// Construct new output.
-    pub(crate) fn new(tokens: Vec<TokenTree>, branches: Vec<Branch>, prefix: Prefix) -> Self {
+    pub(crate) fn new(
+        tokens: Vec<TokenTree>,
+        branches: Vec<Branch>,
+        else_branch: Option<Else>,
+        prefix: Prefix,
+    ) -> Self {
         Self {
             tokens,
             branches,
+            else_branch,
             prefix,
         }
     }
@@ -33,6 +40,10 @@ impl Output {
             braced(from_fn(|stream, span| {
                 for b in &self.branches {
                     stream.tokens(span, (b.variant.as_ref(), parens(b.generic.as_ref()), ','));
+                }
+
+                if self.else_branch.is_some() {
+                    stream.tokens(span, ("Disabled", ','));
                 }
             })),
         )
@@ -137,6 +148,24 @@ impl Output {
                 }
             }
 
+            if let Some(e) = &self.else_branch {
+                if immediate && self.else_branch.is_some() {
+                    let body = (
+                        "return",
+                        tok::Poll::Ready(("private", S, OUT, S, "Disabled")),
+                        ';',
+                    );
+                    stream.tokens(span, ("usize", S, "MAX", tok::ROCKET, braced(body)));
+                } else {
+                    let body = (
+                        "return",
+                        tok::Poll::Ready(&self.tokens[e.branch.clone()]),
+                        ';',
+                    );
+                    stream.tokens(span, ("usize", S, "MAX", tok::ROCKET, braced(body)));
+                }
+            }
+
             let panic_branch = (
                 ("panic", '!'),
                 parens((string("no branch with index `{}`"), ',', "n")),
@@ -178,6 +207,13 @@ impl Output {
             ("private", S, OUT, S, b.variant.as_ref()),
             parens(&self.tokens[b.binding.clone()]),
             (tok::ROCKET, &self.tokens[b.branch.clone()]),
+        )
+    }
+
+    fn immediate_else_branch<'a>(&'a self, e: &'a Else) -> impl ToTokens + 'a {
+        (
+            ("private", S, OUT, S, "Disabled"),
+            (tok::ROCKET, &self.tokens[e.branch.clone()]),
         )
     }
 
@@ -271,7 +307,7 @@ impl Output {
                     stream.tokens(span, '+');
                 }
 
-                while let Some((b, var)) = it.next() {
+                for (b, var) in it {
                     stream.tokens(span, tok::if_else(var, 1 << b.index, 0));
                     stream.tokens(span, '+');
                 }
@@ -286,10 +322,8 @@ impl Output {
     }
 
     /// Expand a select which is deferred.
-    pub fn expand_deferred(self, stream: &mut TokenStream, span: Span) {
+    pub fn expand(self, stream: &mut TokenStream, span: Span) {
         let start = stream.checkpoint();
-
-        let select = (self.prefix, "deferred");
 
         let imports = (
             self.prefix,
@@ -317,15 +351,13 @@ impl Output {
             body,
         ));
 
-        stream.tokens(span, (select, select_args));
+        stream.tokens(span, (self.prefix, "select", select_args));
         stream.group(span, Delimiter::Brace, start);
     }
 
     /// Expand a select which is awaited immediately.
-    pub fn expand_immediate(self, stream: &mut TokenStream, span: Span) {
+    pub fn expand_inline(self, stream: &mut TokenStream, span: Span) {
         let start = stream.checkpoint();
-
-        let select = (self.prefix, "deferred");
 
         let imports = (
             self.prefix,
@@ -358,6 +390,10 @@ impl Output {
                 stream.tokens(span, self.immediate_out_branch(b));
             }
 
+            if let Some(e) = &self.else_branch {
+                stream.tokens(span, self.immediate_else_branch(e));
+            }
+
             let panic_ = (
                 ("unreachable", '!'),
                 parens(string("branch cannot be reached")),
@@ -370,10 +406,7 @@ impl Output {
             span,
             (
                 "match",
-                select,
-                select_args,
-                '.',
-                "await",
+                (self.prefix, "select", select_args, '.', "await"),
                 braced(output_body),
             ),
         );
@@ -382,7 +415,8 @@ impl Output {
     }
 }
 
-fn clean_pattern<'a>(tree: impl Iterator<Item = TokenTree> + 'a) -> impl ToTokens + 'a {
+/// Clean up a pattern by skipping over any `mut` and `&` tokens.
+fn clean_pattern(tree: impl Iterator<Item = TokenTree>) -> impl ToTokens {
     from_fn(move |stream, span| {
         for tt in tree {
             match tt {

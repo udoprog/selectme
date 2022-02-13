@@ -15,7 +15,7 @@ pub struct TokenStream {
 impl TokenStream {
     /// Push a single token tree.
     pub fn push(&mut self, tt: TokenTree) {
-        self.inner.push(tt.into());
+        self.inner.push(tt);
     }
 
     /// Push the given sequence of tokens.

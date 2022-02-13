@@ -39,7 +39,25 @@ impl Set {
 pub(crate) struct Snapshot(u64);
 
 impl Snapshot {
+    /// Test if the snapshot is empty.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+
+    /// Retain the elements which exists in both sets.
+    #[inline]
+    pub(crate) fn retain(&mut self, other: Self) {
+        self.0 &= other.0;
+    }
+
+    /// Clear the given index.
+    #[inline]
+    pub(crate) fn clear(&mut self, index: usize) {
+        self.0 &= !(1u64 << index as u64);
+    }
+
     /// Merge this snapshot with another snapshot.
+    #[inline]
     pub(crate) fn merge(&mut self, other: Self) {
         self.0 |= other.0;
     }

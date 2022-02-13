@@ -1,14 +1,15 @@
-use proc_macro::Span;
-use to_tokens::ToTokens;
-
-use crate::token_stream::TokenStream;
-
 mod error;
 mod output;
 mod parser;
 mod to_tokens;
 mod tok;
 mod token_stream;
+
+use proc_macro::{Delimiter, Span};
+use to_tokens::ToTokens;
+
+use crate::error::Error;
+use crate::token_stream::TokenStream;
 
 #[proc_macro]
 pub fn select(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -18,12 +19,10 @@ pub fn select(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     match p.parse() {
         Ok(output) => {
-            output.expand_deferred(&mut stream, Span::mixed_site());
+            output.expand(&mut stream, Span::mixed_site());
         }
         Err(errors) => {
-            for error in errors {
-                error.to_tokens(&mut stream, Span::mixed_site());
-            }
+            format_errors(errors, &mut stream, Span::mixed_site());
         }
     }
 
@@ -31,21 +30,35 @@ pub fn select(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[proc_macro]
-pub fn immediate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn inline(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let p = parser::Parser::new(input);
 
     let mut stream = TokenStream::default();
 
     match p.parse() {
         Ok(output) => {
-            output.expand_immediate(&mut stream, Span::mixed_site());
+            output.expand_inline(&mut stream, Span::mixed_site());
         }
         Err(errors) => {
-            for error in errors {
-                error.to_tokens(&mut stream, Span::mixed_site());
-            }
+            format_errors(errors, &mut stream, Span::mixed_site());
         }
     }
 
     stream.into_token_stream()
+}
+
+fn format_errors(errors: Vec<Error>, stream: &mut TokenStream, span: Span) {
+    let start = stream.checkpoint();
+    let mut it = errors.into_iter();
+
+    if let Some(last) = it.next_back() {
+        for error in it {
+            error.to_tokens(stream, span);
+            stream.tokens(span, ';');
+        }
+
+        last.to_tokens(stream, span);
+    }
+
+    stream.group(span, Delimiter::Brace, start);
 }

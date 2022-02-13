@@ -6,6 +6,11 @@ use proc_macro::{Delimiter, Ident, Spacing, Span, TokenTree};
 use crate::error::Error;
 use crate::output::{Output, Prefix};
 
+enum Segment {
+    Branch(Branch),
+    Else(Else),
+}
+
 // Punctuations that we look for.
 const COMMA: [char; 2] = [',', '\0'];
 const EQ: [char; 2] = ['=', '\0'];
@@ -33,11 +38,19 @@ impl Parser {
     /// Parse and produce the corresponding token stream.
     pub(crate) fn parse(mut self) -> Result<Output, Vec<Error>> {
         let mut branches = Vec::new();
+        let mut else_branch = None;
         let mut n = 0;
 
         while self.nth(0).is_some() {
-            if let Some(b) = self.parse_segment(n) {
-                branches.push(b);
+            if let Some(segment) = self.parse_segment(n) {
+                match segment {
+                    Segment::Branch(b) => {
+                        branches.push(b);
+                    }
+                    Segment::Else(e) => {
+                        else_branch = Some(e);
+                    }
+                }
             }
 
             self.skip_punct(COMMA);
@@ -48,7 +61,12 @@ impl Parser {
             return Err(self.errors);
         }
 
-        Ok(Output::new(self.tokens, branches, Prefix::SelectMe))
+        Ok(Output::new(
+            self.tokens,
+            branches,
+            else_branch,
+            Prefix::SelectMe,
+        ))
     }
 
     /// Skip one of the specified punctuations.
@@ -85,10 +103,8 @@ impl Parser {
     fn parse_condition(&mut self, ident: Ident) -> Option<(usize, usize)> {
         let start = self.tokens.len();
 
-        if self.parse_until(ROCKET) {
-            if start != self.tokens.len() {
-                return Some((start, self.tokens.len()));
-            }
+        if self.parse_until(ROCKET) && start != self.tokens.len() {
+            return Some((start, self.tokens.len()));
         }
 
         let end = self.recover_failed_condition(ident.span())?;
@@ -159,18 +175,14 @@ impl Parser {
                     ));
                     return Some(self.tokens.len());
                 }
-                Some(..) => match self.peek_punct() {
-                    Some(p) => match p.chars {
-                        ROCKET => {
-                            self.step(p.len());
-                            self.errors
-                                .push(Error::new(span, "expected condition expression"));
-                            return Some(self.tokens.len());
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                },
+                Some(..) => {
+                    if let Some(p @ Punct { chars: ROCKET, .. }) = self.peek_punct() {
+                        self.step(p.len());
+                        self.errors
+                            .push(Error::new(span, "expected condition expression"));
+                        return Some(self.tokens.len());
+                    }
+                }
                 None => {
                     self.errors.push(Error::new(
                         span,
@@ -184,9 +196,65 @@ impl Parser {
         }
     }
 
+    /// Unwind until we find a group.
+    fn recover_to_group(&mut self, span: Span) -> Option<()> {
+        loop {
+            match self.nth(0) {
+                Some(TokenTree::Group(..)) => {
+                    self.errors
+                        .push(Error::new(span, "expected '=>' before branch"));
+                    return Some(());
+                }
+                Some(..) => {
+                    let _ = self.bump();
+                }
+                None => {
+                    self.errors.push(Error::new(
+                        span,
+                        "expected condition expression (unexpected end)",
+                    ));
+                    return None;
+                }
+            }
+        }
+    }
+
+    /// Try to parse the `else` keyword and indicate if it was successful.
+    fn try_parse_else(&mut self) -> bool {
+        match self.nth(0) {
+            Some(TokenTree::Ident(ident)) if ident.to_string() == "else" => {
+                let _ = self.bump();
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Parse the next block, if present.
-    fn parse_segment(&mut self, index: usize) -> Option<Branch> {
+    fn parse_segment(&mut self, index: usize) -> Option<Segment> {
         let start = self.tokens.len();
+
+        if self.try_parse_else() {
+            match self.peek_punct() {
+                Some(p @ Punct { chars: ROCKET, .. }) => {
+                    self.step(p.len());
+                }
+                Some(p) => {
+                    self.recover_to_group(p.span)?;
+                }
+                _ => {
+                    let span = match self.nth(0) {
+                        Some(tt) => tt.span(),
+                        None => Span::call_site(),
+                    };
+
+                    self.recover_to_group(span)?;
+                }
+            }
+
+            let branch = self.parse_branch()?;
+            return Some(Segment::Else(Else { branch }));
+        }
 
         let binding = if self.parse_until(EQ) {
             start..self.tokens.len()
@@ -208,6 +276,7 @@ impl Parser {
             var: format!("__cond{}", index).into(),
             range,
         });
+
         let branch = Branch {
             index,
             fuse: true,
@@ -221,7 +290,7 @@ impl Parser {
             condition,
         };
 
-        Some(branch)
+        Some(Segment::Branch(branch))
     }
 
     /// Process a punctuation.
@@ -303,6 +372,7 @@ pub struct Condition {
     pub range: ops::Range<usize>,
 }
 
+/// A regular branch.
 pub struct Branch {
     /// Branch index.
     pub index: usize,
@@ -324,6 +394,12 @@ pub struct Branch {
     pub variant: Box<str>,
     /// Branch condition.
     pub condition: Option<Condition>,
+}
+
+/// Code for the else branch.
+pub struct Else {
+    /// Range for the branch.
+    pub branch: ops::Range<usize>,
 }
 
 /// A complete punctuation.
