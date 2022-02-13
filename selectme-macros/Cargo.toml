@@ -13,9 +13,5 @@ A fast and fair select! macro for async Rust.
 """
 categories = ["asynchronous", "concurrency"]
 
-[features]
-default = ["tokio-compat"]
-tokio-compat = []
-
 [lib]
 proc-macro = true

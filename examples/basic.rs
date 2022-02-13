@@ -24,6 +24,6 @@ pub async fn main() {
             }
         };
 
-        dbg!(output);
+        dbg!(output.await);
     }
 }

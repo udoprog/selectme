@@ -5,7 +5,7 @@ mod set;
 mod atomic_waker;
 
 #[doc(inline)]
-pub use selectme_macros::select;
+pub use selectme_macros::{select, tokio_select};
 
 #[doc(hidden)]
 pub mod macros {
@@ -35,9 +35,17 @@ pub struct Select<T, F, O> {
     _marker: marker::PhantomData<O>,
 }
 
+impl<T, F, O> Select<T, F, O> {
+    /// Merge waker into current set.
+    fn merge_from_shared(&mut self) {
+        let snapshot = self.waker.set.take();
+        self.snapshot.merge(snapshot);
+    }
+}
+
 impl<T, F, O> Select<T, F, O>
 where
-    T: FnMut(&mut Context<'_>, Pin<&mut F>, usize) -> Poll<O>,
+    T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
 {
     /// Wait for one of the select branches to complete in a [Select] which is
     /// [Unpin].
@@ -46,12 +54,6 @@ where
         Self: Unpin,
     {
         Pin::new(self).next_pinned().await
-    }
-
-    /// Merge waker into current set.
-    fn merge_from_shared(&mut self) {
-        let snapshot = self.waker.set.take();
-        self.snapshot.merge(snapshot);
     }
 
     /// Wait for one of the select branches to complete in a pinned select.
@@ -64,12 +66,11 @@ where
         unsafe {
             let this = self.get_unchecked_mut();
             this.merge_from_shared();
-            let mut futures = Pin::new_unchecked(&mut this.futures);
 
             this.waker.parent.register(cx.waker());
 
             while let Some(index) = this.snapshot.next() {
-                if let Poll::Ready(output) = (this.poll)(cx, futures.as_mut(), index as usize) {
+                if let Poll::Ready(output) = (this.poll)(cx, &mut this.futures, index as usize) {
                     return Poll::Ready(output);
                 }
             }
@@ -81,7 +82,7 @@ where
 
 impl<T, F, O> Future for Select<T, F, O>
 where
-    T: FnMut(&mut Context<'_>, Pin<&mut F>, usize) -> Poll<O>,
+    T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
 {
     type Output = O;
 
@@ -97,7 +98,7 @@ pub struct Next<'a, T> {
 
 impl<T, F, O> Future for Next<'_, Select<T, F, O>>
 where
-    T: FnMut(&mut Context<'_>, Pin<&mut F>, usize) -> Poll<O>,
+    T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
 {
     type Output = O;
 
@@ -118,9 +119,10 @@ impl<T, F, O> Drop for Select<T, F, O> {
 }
 
 /// Construct a new polling context from a custom function.
+#[doc(hidden)]
 pub fn select<T, F, O>(waker: &'static StaticWaker, futures: F, poll: T) -> Select<T, F, O>
 where
-    T: FnMut(&mut Context<'_>, Pin<&mut F>, usize) -> Poll<O>,
+    T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
 {
     let snapshot = waker.set.take();
 

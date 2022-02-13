@@ -27,13 +27,7 @@ pub fn as_mut(tt: impl ToTokens) -> impl ToTokens {
 }
 
 pub fn if_else(cond: impl ToTokens, then: impl ToTokens, else_: impl ToTokens) -> impl ToTokens {
-    from_fn(move |stream, span| {
-        stream.tokens(span, "if");
-        stream.tokens(span, cond);
-        stream.tokens(span, braced(then));
-        stream.tokens(span, "else");
-        stream.tokens(span, braced(else_));
-    })
+    ("if", cond, braced(then), "else", braced(else_))
 }
 
 pub enum Option<T> {

@@ -5,79 +5,44 @@ use crate::to_tokens::{braced, bracketed, from_fn, parens, string, ToTokens};
 use crate::tok::{self, S};
 use crate::token_stream::TokenStream;
 
-fn clean_pattern<'a>(tree: impl Iterator<Item = TokenTree> + 'a) -> impl ToTokens + 'a {
-    from_fn(move |stream, span| {
-        for tt in tree {
-            match tt {
-                TokenTree::Group(g) => {
-                    let checkpoint = stream.checkpoint();
-                    clean_pattern(g.stream().into_iter()).to_tokens(stream, span);
-                    stream.group(span, g.delimiter(), checkpoint);
-                }
-                TokenTree::Ident(i) => {
-                    if i.to_string() == "mut" {
-                        continue;
-                    }
-
-                    stream.push(TokenTree::Ident(i));
-                }
-                TokenTree::Punct(p) => {
-                    if p.as_char() == '&' {
-                        continue;
-                    }
-
-                    stream.push(TokenTree::Punct(p));
-                }
-                tt => {
-                    stream.push(tt);
-                }
-            }
-        }
-    })
-}
-
-fn generics(branches: &[Branch]) -> impl ToTokens + '_ {
-    from_fn(move |stream, span| {
-        stream.tokens(span, '<');
-
-        for b in branches {
-            stream.tokens(span, (b.generic.as_ref(), ','));
-        }
-
-        stream.tokens(span, '>');
-    })
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Prefix {
-    SelectMe,
-}
-
-impl ToTokens for Prefix {
-    fn to_tokens(self, stream: &mut TokenStream, span: Span) {
-        match self {
-            Prefix::SelectMe => {
-                stream.tokens(span, (S, "selectme", S));
-            }
-        }
-    }
-}
+/// The name of the output enum.
+const OUT: &str = "Out";
 
 /// The parsed output.
 pub struct Output {
     tokens: Vec<TokenTree>,
     branches: Vec<Branch>,
     prefix: Prefix,
+    tokio_style: bool,
 }
 
 impl Output {
     /// Construct new output.
-    pub(crate) fn new(tokens: Vec<TokenTree>, branches: Vec<Branch>, prefix: Prefix) -> Self {
+    pub(crate) fn new(
+        tokens: Vec<TokenTree>,
+        branches: Vec<Branch>,
+        prefix: Prefix,
+        tokio_style: bool,
+    ) -> Self {
         Self {
             tokens,
             branches,
             prefix,
+            tokio_style: tokio_style,
         }
+    }
+
+    /// Output enumeration.
+    fn out_enum(&self) -> impl ToTokens + '_ {
+        (
+            ("pub", "enum", OUT),
+            branch_generics(&self.branches),
+            braced(from_fn(|stream, span| {
+                for b in &self.branches {
+                    stream.tokens(span, (b.variant.as_ref(), parens(b.generic.as_ref()), ','));
+                }
+            })),
+        )
     }
 
     /// Private module declaration.
@@ -108,22 +73,9 @@ impl Output {
                     );
                 }
 
-                let enum_body = from_fn(|stream, span| {
-                    for b in &self.branches {
-                        stream.tokens(span, (b.variant.as_ref(), parens(b.generic.as_ref()), ','));
-                    }
-                });
-
-                stream.tokens(
-                    span,
-                    (
-                        "pub",
-                        "enum",
-                        "Output",
-                        generics(&self.branches),
-                        braced(enum_body),
-                    ),
-                );
+                if self.tokio_style {
+                    stream.tokens(span, self.out_enum());
+                }
             }));
 
             stream.tokens(span, ("mod", "private", private_mod));
@@ -161,14 +113,8 @@ impl Output {
                 let fut = (
                     "unsafe",
                     braced((
-                        "Pin",
-                        S,
-                        "map_unchecked_mut",
-                        parens((
-                            tok::as_mut("__fut"),
-                            ',',
-                            (tok::piped("f"), '&', "mut", "f", '.', b.index),
-                        )),
+                        ("Pin", S, "new_unchecked"),
+                        parens(('&', "mut", "__fut", '.', b.index)),
                     )),
                 );
 
@@ -199,13 +145,47 @@ impl Output {
             }
 
             let panic_branch = (
-                "panic",
-                '!',
+                ("panic", '!'),
                 parens((string("no branch with index `{}`"), ',', "n")),
             );
 
             stream.tokens(span, ("n", tok::ROCKET, braced(panic_branch)));
         })
+    }
+
+    fn match_tokio_style<'a>(&'a self, b: &'a Branch) -> impl ToTokens + 'a {
+        from_fn(|stream, span| {
+            stream.tokens(
+                span,
+                ('#', bracketed(("allow", parens("unused_variables")))),
+            );
+            stream.tokens(
+                span,
+                (
+                    ("if", "let"),
+                    (clean_pattern(
+                        self.tokens[b.binding.clone()].iter().cloned(),
+                    ),),
+                    ('=', '&', "out"),
+                ),
+            );
+            stream.tokens(
+                span,
+                braced((
+                    "return",
+                    tok::Poll::Ready(("private", S, OUT, S, b.variant.as_ref(), parens("out"))),
+                    ';',
+                )),
+            );
+        })
+    }
+
+    fn tokio_style_out_branch<'a>(&'a self, b: &'a Branch) -> impl ToTokens + 'a {
+        (
+            ("private", S, OUT, S, b.variant.as_ref()),
+            parens(&self.tokens[b.binding.clone()]),
+            (tok::ROCKET, &self.tokens[b.branch.clone()]),
+        )
     }
 
     fn poll<'a>(&'a self, b: &'a Branch, unset: Option<&'a str>) -> impl ToTokens + 'a {
@@ -229,25 +209,27 @@ impl Output {
             ),
             braced((
                 unset.map(|var| (var, '.', "set", parens(tok::Option::<()>::None), ';')),
-                ('#', bracketed(("allow", parens("unused_variables")))),
-                (
-                    "if",
-                    "let",
-                    clean_pattern(self.tokens[b.binding.clone()].iter().cloned()),
-                ),
-                '=',
-                ('&', "out"),
-                braced((
-                    "return",
-                    tok::Poll::Ready((
-                        "private",
-                        S,
-                        "Output",
-                        S,
-                        b.variant.as_ref(),
-                        parens("out"),
-                    )),
-                )),
+                from_fn(|stream, span| {
+                    if self.tokio_style {
+                        stream.tokens(span, self.match_tokio_style(b));
+                    } else {
+                        stream.tokens(
+                            span,
+                            (
+                                "if",
+                                "let",
+                                &self.tokens[b.binding.clone()],
+                                '=',
+                                "out",
+                                braced((
+                                    "return",
+                                    tok::Poll::Ready(&self.tokens[b.branch.clone()]),
+                                    ';',
+                                )),
+                            ),
+                        );
+                    }
+                }),
             )),
         )
     }
@@ -331,27 +313,93 @@ impl ToTokens for Output {
             body,
         ));
 
-        let body = from_fn(|stream, span| {
-            for b in &self.branches {
-                stream.tokens(span, ("private", S, "Output", S, b.variant.as_ref()));
-                stream.tokens(span, parens(&self.tokens[b.binding.clone()]));
-                stream.tokens(span, tok::ROCKET);
-                stream.tokens(span, &self.tokens[b.branch.clone()]);
-            }
+        if self.tokio_style {
+            let output_body = from_fn(|stream, span| {
+                for b in &self.branches {
+                    stream.tokens(span, self.tokio_style_out_branch(b));
+                }
 
-            let panic_ = (
-                "unreachable",
-                '!',
-                parens(string("branch cannot be reached")),
+                let panic_ = (
+                    ("unreachable", '!'),
+                    parens(string("branch cannot be reached")),
+                );
+
+                stream.tokens(span, ("_", tok::ROCKET, braced(panic_)));
+            });
+
+            stream.tokens(
+                span,
+                (
+                    "match",
+                    select,
+                    select_args,
+                    '.',
+                    "await",
+                    braced(output_body),
+                ),
             );
+        } else {
+            stream.tokens(span, (select, select_args));
+        }
 
-            stream.tokens(span, ("_", tok::ROCKET, braced(panic_)));
-        });
-
-        stream.tokens(
-            span,
-            ("match", select, select_args, '.', "await", braced(body)),
-        );
         stream.group(span, Delimiter::Brace, start);
+    }
+}
+
+fn clean_pattern<'a>(tree: impl Iterator<Item = TokenTree> + 'a) -> impl ToTokens + 'a {
+    from_fn(move |stream, span| {
+        for tt in tree {
+            match tt {
+                TokenTree::Group(g) => {
+                    let checkpoint = stream.checkpoint();
+                    clean_pattern(g.stream().into_iter()).to_tokens(stream, span);
+                    stream.group(span, g.delimiter(), checkpoint);
+                }
+                TokenTree::Ident(i) => {
+                    if i.to_string() == "mut" {
+                        continue;
+                    }
+
+                    stream.push(TokenTree::Ident(i));
+                }
+                TokenTree::Punct(p) => {
+                    if p.as_char() == '&' {
+                        continue;
+                    }
+
+                    stream.push(TokenTree::Punct(p));
+                }
+                tt => {
+                    stream.push(tt);
+                }
+            }
+        }
+    })
+}
+
+fn branch_generics(branches: &[Branch]) -> impl ToTokens + '_ {
+    from_fn(move |stream, span| {
+        stream.tokens(span, '<');
+
+        for b in branches {
+            stream.tokens(span, (b.generic.as_ref(), ','));
+        }
+
+        stream.tokens(span, '>');
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Prefix {
+    SelectMe,
+}
+
+impl ToTokens for Prefix {
+    fn to_tokens(self, stream: &mut TokenStream, span: Span) {
+        match self {
+            Prefix::SelectMe => {
+                stream.tokens(span, (S, "selectme", S));
+            }
+        }
     }
 }
