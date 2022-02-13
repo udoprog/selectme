@@ -5,7 +5,7 @@ mod set;
 mod atomic_waker;
 
 #[doc(inline)]
-pub use selectme_macros::{select, tokio_select};
+pub use selectme_macros::{immediate, select};
 
 #[doc(hidden)]
 pub mod macros {
@@ -22,7 +22,7 @@ use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use self::atomic_waker::AtomicWaker;
 use self::set::{Set, Snapshot};
 
-pub struct Select<T, F, O> {
+pub struct Deferred<T, F, O> {
     /// Reference to the static waker associated with the poller.
     waker: &'static StaticWaker,
     /// A snapshot of the bitset for the current things that needs polling.
@@ -35,7 +35,7 @@ pub struct Select<T, F, O> {
     _marker: marker::PhantomData<O>,
 }
 
-impl<T, F, O> Select<T, F, O> {
+impl<T, F, O> Deferred<T, F, O> {
     /// Merge waker into current set.
     fn merge_from_shared(&mut self) {
         let snapshot = self.waker.set.take();
@@ -43,7 +43,7 @@ impl<T, F, O> Select<T, F, O> {
     }
 }
 
-impl<T, F, O> Select<T, F, O>
+impl<T, F, O> Deferred<T, F, O>
 where
     T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
 {
@@ -80,7 +80,7 @@ where
     }
 }
 
-impl<T, F, O> Future for Select<T, F, O>
+impl<T, F, O> Future for Deferred<T, F, O>
 where
     T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
 {
@@ -96,7 +96,7 @@ pub struct Next<'a, T> {
     select: Pin<&'a mut T>,
 }
 
-impl<T, F, O> Future for Next<'_, Select<T, F, O>>
+impl<T, F, O> Future for Next<'_, Deferred<T, F, O>>
 where
     T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
 {
@@ -112,7 +112,7 @@ where
     }
 }
 
-impl<T, F, O> Drop for Select<T, F, O> {
+impl<T, F, O> Drop for Deferred<T, F, O> {
     fn drop(&mut self) {
         self.waker.set.merge(self.snapshot);
     }
@@ -120,13 +120,13 @@ impl<T, F, O> Drop for Select<T, F, O> {
 
 /// Construct a new polling context from a custom function.
 #[doc(hidden)]
-pub fn select<T, F, O>(waker: &'static StaticWaker, futures: F, poll: T) -> Select<T, F, O>
+pub fn deferred<T, F, O>(waker: &'static StaticWaker, futures: F, poll: T) -> Deferred<T, F, O>
 where
     T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
 {
     let snapshot = waker.set.take();
 
-    Select {
+    Deferred {
         waker,
         snapshot,
         futures,

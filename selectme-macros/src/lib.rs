@@ -12,13 +12,13 @@ mod token_stream;
 
 #[proc_macro]
 pub fn select(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let p = parser::Parser::new(input, false);
+    let p = parser::Parser::new(input);
 
     let mut stream = TokenStream::default();
 
     match p.parse() {
         Ok(output) => {
-            output.to_tokens(&mut stream, Span::mixed_site());
+            output.expand_deferred(&mut stream, Span::mixed_site());
         }
         Err(errors) => {
             for error in errors {
@@ -31,14 +31,14 @@ pub fn select(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[proc_macro]
-pub fn tokio_select(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let p = parser::Parser::new(input, true);
+pub fn immediate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let p = parser::Parser::new(input);
 
     let mut stream = TokenStream::default();
 
     match p.parse() {
         Ok(output) => {
-            output.to_tokens(&mut stream, Span::mixed_site());
+            output.expand_immediate(&mut stream, Span::mixed_site());
         }
         Err(errors) => {
             for error in errors {

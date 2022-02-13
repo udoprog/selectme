@@ -17,18 +17,16 @@ pub struct Parser {
     buf: VecDeque<TokenTree>,
     tokens: Vec<TokenTree>,
     errors: Vec<Error>,
-    tokio_style: bool,
 }
 
 impl Parser {
     /// Construct a new parser around the given token stream.
-    pub(crate) fn new(stream: proc_macro::TokenStream, tokio_style: bool) -> Self {
+    pub(crate) fn new(stream: proc_macro::TokenStream) -> Self {
         Self {
             it: stream.into_iter(),
             buf: VecDeque::new(),
             tokens: Vec::new(),
             errors: Vec::new(),
-            tokio_style,
         }
     }
 
@@ -50,12 +48,7 @@ impl Parser {
             return Err(self.errors);
         }
 
-        Ok(Output::new(
-            self.tokens,
-            branches,
-            Prefix::SelectMe,
-            self.tokio_style,
-        ))
+        Ok(Output::new(self.tokens, branches, Prefix::SelectMe))
     }
 
     /// Skip one of the specified punctuations.
@@ -114,7 +107,7 @@ impl Parser {
                     self.step(p.len());
                     return Some((start..self.tokens.len(), None));
                 }
-                Some(p @ Punct { chars: COMMA, .. }) if self.tokio_style => {
+                Some(p @ Punct { chars: COMMA, .. }) => {
                     self.step(p.len());
 
                     let (expr, len) = match self.bump() {

@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use selectme::select;
 use tokio::time;
 
 #[tokio::main]
@@ -13,7 +12,7 @@ pub async fn main() {
     let mut s2 = time::interval(Duration::from_secs(5));
 
     loop {
-        let output = select! {
+        let output = selectme::immediate! {
             () = &mut s1 if !s1_done => {
                 s1_done = true;
                 None
@@ -24,6 +23,6 @@ pub async fn main() {
             }
         };
 
-        dbg!(output.await);
+        dbg!(output);
     }
 }
