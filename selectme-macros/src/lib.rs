@@ -1,25 +1,31 @@
-use proc_macro::{TokenStream, TokenTree};
+use proc_macro::Span;
 use to_tokens::ToTokens;
 
+use crate::token_stream::TokenStream;
+
 mod error;
+mod output;
 mod parser;
 mod to_tokens;
+mod tok;
 mod token_stream;
 
 #[proc_macro]
-pub fn select(input: TokenStream) -> TokenStream {
+pub fn select(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let p = parser::Parser::new(input);
 
+    let mut stream = TokenStream::default();
+
     match p.parse() {
-        Ok(..) => TokenStream::from_iter(std::iter::empty::<TokenTree>()),
+        Ok(output) => {
+            output.to_tokens(&mut stream, Span::mixed_site());
+        }
         Err(errors) => {
-            let mut stream = token_stream::TokenStream::default();
-
             for error in errors {
-                error.to_tokens(&mut stream);
+                error.to_tokens(&mut stream, Span::mixed_site());
             }
-
-            stream.into_token_stream()
         }
     }
+
+    stream.into_token_stream()
 }

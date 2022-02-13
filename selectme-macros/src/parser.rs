@@ -1,20 +1,15 @@
 use std::collections::VecDeque;
 use std::ops;
 
-use proc_macro::{Delimiter, Ident, Span, TokenStream, TokenTree};
+use proc_macro::{Delimiter, Ident, Spacing, Span, TokenTree};
 
 use crate::error::Error;
+use crate::output::{Output, Prefix};
 
 // Punctuations that we look for.
 const COMMA: [char; 2] = [',', '\0'];
 const EQ: [char; 2] = ['=', '\0'];
 const ROCKET: [char; 2] = ['=', '>'];
-
-/// The parsed output.
-pub struct Output {
-    pub tokens: Vec<TokenTree>,
-    pub blocks: Vec<Block>,
-}
 
 /// A parser for the `select!` macro.
 pub struct Parser {
@@ -26,7 +21,7 @@ pub struct Parser {
 
 impl Parser {
     /// Construct a new parser around the given token stream.
-    pub(crate) fn new(stream: TokenStream) -> Self {
+    pub(crate) fn new(stream: proc_macro::TokenStream) -> Self {
         Self {
             it: stream.into_iter(),
             buf: VecDeque::new(),
@@ -37,24 +32,23 @@ impl Parser {
 
     /// Parse and produce the corresponding token stream.
     pub(crate) fn parse(mut self) -> Result<Output, Vec<Error>> {
-        let mut blocks = Vec::new();
+        let mut branches = Vec::new();
+        let mut n = 0;
 
         while self.nth(0).is_some() {
-            if let Some(block) = self.parse_segment() {
-                blocks.push(block);
+            if let Some(b) = self.parse_segment(n) {
+                branches.push(b);
             }
 
             self.skip_punct(COMMA);
+            n += 1;
         }
 
         if !self.errors.is_empty() {
             return Err(self.errors);
         }
 
-        Ok(Output {
-            tokens: self.tokens,
-            blocks,
-        })
+        Ok(Output::new(self.tokens, branches, Prefix::SelectMe))
     }
 
     /// Skip one of the specified punctuations.
@@ -192,7 +186,7 @@ impl Parser {
     }
 
     /// Parse the next block, if present.
-    fn parse_segment(&mut self) -> Option<Block> {
+    fn parse_segment(&mut self, index: usize) -> Option<Branch> {
         let start = self.tokens.len();
 
         let binding = if self.parse_until(EQ) {
@@ -211,12 +205,22 @@ impl Parser {
         let (expr, condition) = self.parse_expr(binding.end)?;
         let branch = self.parse_branch()?;
 
-        Some(Block {
+        let condition = condition.map(|range| Condition {
+            var: format!("__cond{}", index).into(),
+            range,
+        });
+        let branch = Branch {
+            index,
+            fuse: true,
             binding,
             expr,
-            condition,
             branch,
-        })
+            waker: format!("WAKER{}", index).into(),
+            pin: format!("__fut{}", index).into(),
+            condition,
+        };
+
+        Some(branch)
     }
 
     /// Process a punctuation.
@@ -227,6 +231,10 @@ impl Parser {
             match (n, self.nth(n)) {
                 (_, Some(TokenTree::Punct(punct))) => {
                     *o = Some((punct.span(), punct.as_char()));
+
+                    if !matches!(punct.spacing(), Spacing::Joint) {
+                        break;
+                    }
                 }
                 _ => {
                     break;
@@ -286,11 +294,28 @@ impl Parser {
     }
 }
 
-pub struct Block {
+/// A branch condition.
+pub struct Condition {
+    /// Condition variable.
+    pub var: Box<str>,
+    /// Token range of the condition.
+    pub range: ops::Range<usize>,
+}
+
+pub struct Branch {
+    /// Branch index.
+    pub index: usize,
+    /// If the branch should automatically fuse.
+    pub fuse: bool,
     pub binding: ops::Range<usize>,
     pub expr: ops::Range<usize>,
-    pub condition: Option<ops::Range<usize>>,
     pub branch: ops::Range<usize>,
+    /// The name of the child waker for this block.
+    pub waker: Box<str>,
+    /// The name of the pin variable.
+    pub pin: Box<str>,
+    /// Branch condition.
+    pub condition: Option<Condition>,
 }
 
 /// A complete punctuation.

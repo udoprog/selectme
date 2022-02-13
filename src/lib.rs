@@ -1,10 +1,11 @@
 //! A fast and fair select! implementation for asynchronous programming.
 
 mod set;
-use self::set::{Set, Snapshot};
 
 mod atomic_waker;
-use self::atomic_waker::AtomicWaker;
+
+#[doc(inline)]
+pub use selectme_macros::select;
 
 #[doc(hidden)]
 pub mod macros {
@@ -18,8 +19,75 @@ use std::marker;
 use std::pin::Pin;
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
-#[doc(inline)]
-pub use selectme_macros::select;
+use self::atomic_waker::AtomicWaker;
+use self::set::{Set, Snapshot};
+
+pub struct Select<T, F, O> {
+    poller: Poller<O>,
+    futures: F,
+    poll: T,
+}
+
+impl<T, F, O> Select<T, F, O>
+where
+    T: FnMut(&mut Context<'_>, Pin<&mut F>, &mut Poller<O>) -> Poll<O>,
+{
+    /// Wait for one of the select branches to complete in a [Select] which is
+    /// [Unpin].
+    pub async fn next(&mut self) -> O
+    where
+        Self: Unpin,
+    {
+        Pin::new(self).next_pinned().await
+    }
+
+    /// Wait for one of the select branches to complete in a pinned select.
+    pub fn next_pinned(self: Pin<&mut Self>) -> impl Future<Output = O> + '_ {
+        Next { select: self }
+    }
+
+    /// Inner poll implementation.
+    fn inner_poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<O> {
+        unsafe {
+            let this = self.get_unchecked_mut();
+            this.poller.merge_from_shared();
+            let futures = Pin::new_unchecked(&mut this.futures);
+            (this.poll)(cx, futures, &mut this.poller)
+        }
+    }
+}
+
+impl<T, F, O> Future for Select<T, F, O>
+where
+    T: FnMut(&mut Context<'_>, Pin<&mut F>, &mut Poller<O>) -> Poll<O>,
+{
+    type Output = O;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.inner_poll(cx)
+    }
+}
+
+/// The future implementation of [Select::next].
+pub struct Next<'a, T> {
+    select: Pin<&'a mut T>,
+}
+
+impl<T, F, O> Future for Next<'_, Select<T, F, O>>
+where
+    T: FnMut(&mut Context<'_>, Pin<&mut F>, &mut Poller<O>) -> Poll<O>,
+{
+    type Output = O;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: Type is safely Unpin since the only way to access it is
+        // through [Select::next] which requires `Unpin`.
+        unsafe {
+            let this = self.get_unchecked_mut();
+            this.select.as_mut().inner_poll(cx)
+        }
+    }
+}
 
 pub struct Poller<O> {
     /// Reference to the static waker associated with the poller.
@@ -65,13 +133,17 @@ impl<O> Poller<O> {
     {
         self.waker.parent.register(cx.waker());
 
-        let waker = unsafe {
-            let waker = RawWaker::new(waker as *const _ as *const (), POLLER_WAKER_VTABLE);
-            Waker::from_raw(waker)
+        let output = {
+            let waker = unsafe {
+                let waker = RawWaker::new(waker as *const _ as *const (), POLLER_WAKER_VTABLE);
+                Waker::from_raw(waker)
+            };
+
+            let mut cx = Context::from_waker(&waker);
+            poll(&mut cx)
         };
 
-        let mut cx = Context::from_waker(&waker);
-        poll(&mut cx)
+        output
     }
 }
 
@@ -81,34 +153,15 @@ impl<O> Drop for Poller<O> {
     }
 }
 
-/// The future implementation of [poll_fn].
-struct FromFn<T, O> {
-    poller: Poller<O>,
-    poll: T,
-}
-
 /// Construct a new polling context from a custom function.
-pub fn from_fn<T, O>(waker: &'static StaticWaker, poll: T) -> impl Future<Output = O>
+pub fn select<T, F, O>(waker: &'static StaticWaker, futures: F, poll: T) -> Select<T, F, O>
 where
-    T: FnMut(&mut Context<'_>, &mut Poller<O>) -> Poll<O>,
+    T: FnMut(&mut Context<'_>, Pin<&mut F>, &mut Poller<O>) -> Poll<O>,
 {
-    FromFn {
+    Select {
         poller: Poller::new(waker),
+        futures,
         poll,
-    }
-}
-
-impl<T, O> Future for FromFn<T, O>
-where
-    T: FnMut(&mut Context<'_>, &mut Poller<O>) -> Poll<O>,
-{
-    type Output = O;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // SAFETY: Type is safely Unpin.
-        let this = unsafe { self.get_unchecked_mut() };
-        this.poller.merge_from_shared();
-        (this.poll)(cx, &mut this.poller)
     }
 }
 

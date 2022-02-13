@@ -27,7 +27,7 @@ impl Set {
 
     /// Set the given bit in the set.
     pub(crate) fn set(&self, index: usize) {
-        assert!(index < 64);
+        assert!(index < u64::BITS as usize);
         let bit = 1u64 << index as u64;
         self.0.fetch_or(bit, Ordering::SeqCst);
     }
@@ -39,18 +39,6 @@ impl Set {
 pub(crate) struct Snapshot(u64);
 
 impl Snapshot {
-    /// Unset the given bit and return if it was set or not.
-    pub(crate) fn unset(&mut self, n: usize) -> bool {
-        let bit = 1u64 << n as u64;
-
-        if self.0 & bit == 0 {
-            false
-        } else {
-            self.0 &= !bit;
-            true
-        }
-    }
-
     /// Merge this snapshot with another snapshot.
     pub(crate) fn merge(&mut self, other: Self) {
         self.0 |= other.0;
