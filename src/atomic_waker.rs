@@ -1,5 +1,6 @@
 use core::cell::UnsafeCell;
 use core::fmt;
+use core::ops::Deref;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::{AcqRel, Acquire, Release};
 use core::task::Waker;
@@ -176,8 +177,22 @@ impl AtomicWaker {
         {
             WAITING => {
                 unsafe {
-                    // Locked acquired, update the waker cell
-                    *self.waker.get() = Some(waker.clone());
+                    {
+                        // Note: must not hold this reference across the unlock
+                        // below.
+                        let waker_mut = &mut *self.waker.get();
+
+                        // Locked acquired, update the waker cell
+                        if let Some(other) = waker_mut {
+                            // Only replace if the waker is different. This will
+                            // drop the other waker.
+                            if !waker.will_wake(other) {
+                                *other = waker.clone();
+                            }
+                        } else {
+                            *waker_mut = Some(waker.clone());
+                        }
+                    }
 
                     // Release the lock. If the state transitioned to include
                     // the `WAKING` bit, this means that at least one wake has
@@ -195,7 +210,7 @@ impl AtomicWaker {
 
                     match res {
                         Ok(_) => {
-                            // memory ordering: acquired self.state during CAS
+                            // Memory ordering: acquired self.state during CAS
                             // - if previous wakes went through it syncs with
                             //   their final release (`fetch_and`)
                             // - if there was no previous wake the next wake
@@ -203,29 +218,30 @@ impl AtomicWaker {
                         }
                         Err(actual) => {
                             // This branch can only be reached if at least one
-                            // concurrent thread called `wake`. In this
-                            // case, `actual` **must** be `REGISTERING |
-                            // `WAKING`.
+                            // concurrent thread called `wake`. In this case,
+                            // `actual` **must** be `REGISTERING | `WAKING`.
                             debug_assert_eq!(actual, REGISTERING | WAKING);
 
-                            // Take the waker to wake once the atomic operation has
-                            // completed.
-                            let waker = (*self.waker.get()).take().unwrap();
+                            // Take the waker to wake once the atomic operation
+                            // has completed.
+                            if let Some(waker) = (*self.waker.get()).as_ref() {
+                                // So we simply schedule to come back later (we
+                                // could also simply leave the registration in
+                                // place above).
+                                waker.wake_by_ref();
+                            }
 
-                            // We need to return to WAITING state (clear our lock and
-                            // concurrent WAKING flag). This needs to acquire all
-                            // WAKING fetch_or releases and it needs to release our
-                            // update to self.waker, so we need a `swap` operation.
-                            self.state.swap(WAITING, AcqRel);
-
-                            // memory ordering: we acquired the state for all
+                            // We need to return to WAITING state (clear our
+                            // lock and concurrent WAKING flag). This needs to
+                            // acquire all WAKING fetch_or releases and it needs
+                            // to release our update to self.waker, so we need a
+                            // `swap` operation.
+                            //
+                            // Memory ordering: we acquired the state for all
                             // concurrent wakes, but future wakes might still
                             // need to wake us in case we can't make progress
                             // from the pending wakes.
-                            //
-                            // So we simply schedule to come back later (we could
-                            // also simply leave the registration in place above).
-                            waker.wake();
+                            self.state.swap(WAITING, AcqRel);
                         }
                     }
                 }
@@ -234,7 +250,7 @@ impl AtomicWaker {
                 // Currently in the process of waking the task, i.e.,
                 // `wake` is currently being called on the old task handle.
                 //
-                // memory ordering: we acquired the state for all
+                // Memory ordering: we acquired the state for all
                 // concurrent wakes, but future wakes might still
                 // need to wake us in case we can't make progress
                 // from the pending wakes.
@@ -250,7 +266,7 @@ impl AtomicWaker {
                 // caller's code as racing to call `register` doesn't make much
                 // sense.
                 //
-                // memory ordering: don't care. a concurrent register() is going
+                // Memory ordering: don't care. a concurrent register() is going
                 // to succeed and provide proper memory ordering.
                 //
                 // We just want to maintain memory safety. It is ok to drop the
@@ -263,33 +279,33 @@ impl AtomicWaker {
     /// Calls `wake` on the last `Waker` passed to `register`.
     ///
     /// If `register` has not been called yet, then this does nothing.
-    pub fn wake(&self) {
-        if let Some(waker) = self.take() {
-            waker.wake();
+    pub fn wake_by_ref(&self) {
+        if let Some(waker) = self.borrow() {
+            waker.wake_by_ref();
         }
     }
 
-    /// Returns the last `Waker` passed to `register`, so that the user can wake it.
+    /// Borrows and returns the last `Waker` passed to `register`, so that the
+    /// user can wake it.
     ///
-    ///
-    /// Sometimes, just waking the AtomicWaker is not fine grained enough. This allows the user
-    /// to take the waker and then wake it separately, rather than performing both steps in one
-    /// atomic action.
+    /// Sometimes, just waking the AtomicWaker is not fine grained enough. This
+    /// allows the user to take the waker and then wake it separately, rather
+    /// than performing both steps in one atomic action.
     ///
     /// If a waker has not been registered, this returns `None`.
-    fn take(&self) -> Option<Waker> {
+    fn borrow(&self) -> Option<WakerGuard<'_>> {
         // AcqRel ordering is used in order to acquire the value of the `task`
         // cell as well as to establish a `release` ordering with whatever
         // memory the `AtomicWaker` is associated with.
         match self.state.fetch_or(WAKING, AcqRel) {
             WAITING => {
+                let guard = BorrowUnlockGuard(&self.state);
                 // The waking lock has been acquired.
-                let waker = unsafe { (*self.waker.get()).take() };
-
-                // Release the lock
-                self.state.fetch_and(!WAKING, Release);
-
-                waker
+                let waker = unsafe { (*self.waker.get()).as_ref()? };
+                Some(WakerGuard {
+                    _guard: guard,
+                    waker,
+                })
             }
             state => {
                 // There is a concurrent thread currently updating the
@@ -322,3 +338,24 @@ impl fmt::Debug for AtomicWaker {
 
 unsafe impl Send for AtomicWaker {}
 unsafe impl Sync for AtomicWaker {}
+
+struct BorrowUnlockGuard<'a>(&'a AtomicUsize);
+
+impl Drop for BorrowUnlockGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_and(!WAKING, Release);
+    }
+}
+
+struct WakerGuard<'a> {
+    _guard: BorrowUnlockGuard<'a>,
+    waker: &'a Waker,
+}
+
+impl Deref for WakerGuard<'_> {
+    type Target = Waker;
+
+    fn deref(&self) -> &Self::Target {
+        self.waker
+    }
+}
