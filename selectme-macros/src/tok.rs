@@ -49,7 +49,6 @@ where
 
 pub enum Poll<T> {
     Ready(T),
-    Pending,
 }
 
 impl<T> ToTokens for Poll<T>
@@ -59,7 +58,6 @@ where
     fn to_tokens(self, stream: &mut TokenStream, span: Span) {
         match self {
             Poll::Ready(tt) => stream.tokens(span, ("Poll", S, "Ready", parens(tt))),
-            Poll::Pending => stream.tokens(span, ("Poll", S, "Pending")),
         }
     }
 }

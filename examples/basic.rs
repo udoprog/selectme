@@ -7,28 +7,27 @@ pub async fn main() {
     let s1 = time::sleep(Duration::from_secs(2));
     tokio::pin!(s1);
 
-    let s2 = time::sleep(Duration::from_secs(5));
-    tokio::pin!(s2);
+    let mut s1_done = false;
 
-    let output = selectme::select! {
-        () = s1 => {
-            true
-        }
-        () = s2 => {
-            true
-        }
-        else => {
-            false
-        }
-    };
-    tokio::pin!(output);
+    let mut s2 = time::interval(Duration::from_secs(5));
+    let mut s2_done = false;
 
     loop {
-        let output = output.as_mut().next_pinned().await;
-        dbg!(output);
+        let output = selectme::select! {
+            () = &mut s1 if !s1_done => {
+                s1_done = true;
+                None
+            }
+            mut instant = s2.tick() if !s2_done => {
+                s2_done = true;
+                instant = tokio::time::Instant::now();
+                Some(instant)
+            }
+            else => {
+                break;
+            }
+        };
 
-        if !output {
-            break;
-        }
+        dbg!(output);
     }
 }

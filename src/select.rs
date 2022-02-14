@@ -1,14 +1,13 @@
-use std::future::Future;
-use std::marker;
-use std::mem::take;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use core::future::Future;
+use core::mem::take;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 
 use crate::set::Snapshot;
 use crate::static_waker::StaticWaker;
 
 /// The type produced by the [select!] macro.
-pub struct Select<T, F, O> {
+pub struct Select {
     /// Mask of tasks which are active.
     mask: Snapshot,
     /// Indicates if a merge should be performed.
@@ -17,16 +16,10 @@ pub struct Select<T, F, O> {
     waker: &'static StaticWaker,
     /// A snapshot of the bitset for the current things that needs polling.
     snapshot: Snapshot,
-    /// Captured futures.
-    futures: F,
-    /// Polling function.
-    poll: T,
-    /// Marker indicating the output type.
-    _marker: marker::PhantomData<O>,
 }
 
-impl<T, F, O> Select<T, F, O> {
-    pub(crate) fn new(waker: &'static StaticWaker, futures: F, poll: T) -> Self {
+impl Select {
+    pub(crate) fn new(waker: &'static StaticWaker) -> Self {
         let snapshot = waker.set.take();
 
         Self {
@@ -34,36 +27,27 @@ impl<T, F, O> Select<T, F, O> {
             merge: true,
             waker,
             snapshot,
-            futures,
-            poll,
-            _marker: marker::PhantomData,
         }
+    }
+
+    /// Clear the given index.
+    pub fn clear(&mut self, index: usize) {
+        self.mask.clear(index);
+    }
+
+    /// Wait for one of the select branches to complete in a [Select] which is
+    /// [Unpin].
+    pub async fn next(&mut self) -> usize
+    where
+        Self: Unpin,
+    {
+        Next { select: self }.await
     }
 
     /// Merge waker into current set.
     fn merge_from_shared(&mut self) {
         let snapshot = self.waker.set.take().mask(self.mask);
         self.snapshot.merge(snapshot);
-    }
-}
-
-impl<T, F, O> Select<T, F, O>
-where
-    T: FnMut(&mut F, &mut Snapshot, usize) -> Poll<O>,
-{
-    /// Wait for one of the select branches to complete in a [Select] which is
-    /// [Unpin].
-    pub async fn next(&mut self) -> O
-    where
-        Self: Unpin,
-    {
-        Pin::new(self).next_pinned().await
-    }
-
-    /// Wait for one of the select branches to complete in a [Select] which is
-    /// [Unpin] in a pinned context.
-    pub fn next_pinned(self: Pin<&mut Self>) -> impl Future<Output = O> + '_ {
-        Next { select: self }
     }
 
     /// Merge and return a boolean indicating if we should yield as pending or
@@ -85,18 +69,12 @@ where
     }
 
     /// Inner poll implementation.
-    fn inner_poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<O> {
+    fn inner_poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<usize> {
         unsafe {
             let this = self.get_unchecked_mut();
 
             if this.mask.is_empty() {
-                if let Poll::Ready(output) = (this.poll)(
-                    &mut this.futures,
-                    &mut this.mask,
-                    crate::__support::DISABLED,
-                ) {
-                    return Poll::Ready(output);
-                }
+                return Poll::Ready(crate::__support::DISABLED);
             }
 
             if take(&mut this.merge) && this.merge(cx) {
@@ -105,15 +83,7 @@ where
 
             while let Some(index) = this.snapshot.unset_next() {
                 let index = index as usize;
-
-                if let Poll::Ready(output) = (this.poll)(&mut this.futures, &mut this.mask, index) {
-                    if this.snapshot.is_empty() {
-                        this.merge = true;
-                    }
-
-                    cx.waker().wake_by_ref();
-                    return Poll::Ready(output);
-                }
+                return Poll::Ready(index);
             }
 
             // We have drained the current snapshot, so we must perform another
@@ -126,11 +96,8 @@ where
     }
 }
 
-impl<T, F, O> Future for Select<T, F, O>
-where
-    T: FnMut(&mut F, &mut Snapshot, usize) -> Poll<O>,
-{
-    type Output = O;
+impl Future for Select {
+    type Output = usize;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.inner_poll(cx)
@@ -138,22 +105,16 @@ where
 }
 
 /// The future implementation of [Select::next].
-struct Next<'a, T> {
-    select: Pin<&'a mut T>,
+struct Next<'a> {
+    select: &'a mut Select,
 }
 
-impl<T, F, O> Future for Next<'_, Select<T, F, O>>
-where
-    T: FnMut(&mut F, &mut Snapshot, usize) -> Poll<O>,
-{
-    type Output = O;
+impl Future for Next<'_> {
+    type Output = usize;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // SAFETY: Type is safely Unpin since the only way to access it is
         // through [Select::next] which requires `Unpin`.
-        unsafe {
-            let this = self.get_unchecked_mut();
-            this.select.as_mut().inner_poll(cx)
-        }
+        unsafe { Pin::map_unchecked_mut(self, |f| f.select).inner_poll(cx) }
     }
 }

@@ -5,9 +5,8 @@
 //!
 //! A fast and fair select! implementation for asynchronous programming.
 //!
-//! See [inline!] or [select!] for documentation.
+//! See [select!] for documentation.
 //!
-//! [inline!]: https://docs.rs/selectme/latest/selectme/macro.inline.html
 //! [select!]: https://docs.rs/selectme/latest/selectme/macro.select.html
 
 // This project contains code and documentation licensed under the MIT license
@@ -21,6 +20,7 @@
 // See: https://github.com/tokio-rs/tokio/blob/986b88b/LICENSE
 
 #![deny(missing_docs)]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 mod set;
 
@@ -41,22 +41,18 @@ mod macros;
 pub mod __support {
     pub use crate::poller_waker::{poll_by_ref, PollerWaker};
     pub use crate::static_waker::StaticWaker;
-    pub use selectme_macros::{inline, select};
-    pub use std::future::Future;
-    pub use std::pin::Pin;
-    pub use std::task::Poll;
+    pub use core::future::Future;
+    pub use core::pin::Pin;
+    pub use core::task::Poll;
+    pub use selectme_macros::select;
 
     use crate::select::Select;
-    use crate::set::Snapshot;
 
     /// Indicator index used when all futures have been disabled.
     pub const DISABLED: usize = usize::MAX;
 
     /// Construct a new polling context from a custom function.
-    pub fn select<T, F, O>(waker: &'static StaticWaker, futures: F, poll: T) -> Select<T, F, O>
-    where
-        T: FnMut(&mut F, &mut Snapshot, usize) -> Poll<O>,
-    {
-        Select::new(waker, futures, poll)
+    pub fn select(waker: &'static StaticWaker) -> Select {
+        Select::new(waker)
     }
 }

@@ -16,6 +16,8 @@ async fn poller_test() {
 
     loop {
         let output = {
+            use ::selectme::__support::{Future, Pin, Poll};
+
             mod private {
                 pub static WAKER: ::selectme::__support::StaticWaker =
                     ::selectme::__support::StaticWaker::new();
@@ -25,14 +27,14 @@ async fn poller_test() {
                     ::selectme::__support::PollerWaker::new(&WAKER, 1);
             }
 
-            let __fut = (Some(s1.as_mut()), Some(s2.as_mut()));
+            let mut __fut = (Some(s1.as_mut()), Some(s2.as_mut()));
 
             private::WAKER.reset(if s1_done { 0 } else { 1 } | if s2_done { 0 } else { 2 });
 
-            ::selectme::__support::select(&private::WAKER, __fut, |__fut, __mask, __index| {
-                use ::selectme::__support::{Future, Pin, Poll};
+            let mut select = ::selectme::__support::select(&private::WAKER);
 
-                match __index {
+            loop {
+                match select.next().await {
                     0 => {
                         let __fut0 = unsafe { Pin::new_unchecked(&mut __fut.0) };
 
@@ -42,14 +44,14 @@ async fn poller_test() {
                                     Future::poll(__fut, cx)
                                 })
                             {
-                                __mask.clear(__index);
+                                select.clear(0);
 
                                 #[allow(irrefutable_let_patterns)]
                                 if let () = out {
-                                    return Poll::Ready({
+                                    break {
                                         s1_done = true;
                                         1
-                                    });
+                                    };
                                 }
                             }
                         }
@@ -64,31 +66,27 @@ async fn poller_test() {
                                 })
                             {
                                 __fut1.set(None);
-                                __mask.clear(__index);
+                                select.clear(1);
 
                                 #[allow(irrefutable_let_patterns)]
                                 if let () = out {
-                                    return Poll::Ready({
+                                    break {
                                         s2_done = true;
                                         2
-                                    });
+                                    };
                                 }
                             }
                         }
                     }
                     ::selectme::__support::DISABLED => {
-                        return Poll::Ready(4);
+                        break 4;
                     }
                     n => {
                         panic!("no branch with index `{}`", n);
                     }
                 }
-
-                Poll::Pending
-            })
+            }
         };
-
-        let output = output.await;
 
         if output == 4 {
             break;

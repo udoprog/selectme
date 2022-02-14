@@ -7,9 +7,8 @@
 
 A fast and fair select! implementation for asynchronous programming.
 
-See [inline!] or [select!] for documentation.
+See [select!] for documentation.
 
-[inline!]: https://docs.rs/selectme/latest/selectme/macro.inline.html
 [select!]: https://docs.rs/selectme/latest/selectme/macro.select.html
 
 License: MIT/Apache-2.0

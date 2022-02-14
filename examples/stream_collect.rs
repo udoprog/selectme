@@ -8,7 +8,7 @@ async fn main() {
     let mut values = vec![];
 
     loop {
-        selectme::inline! {
+        selectme::select! {
             Some(v) = stream1.next() => values.push(v),
             Some(v) = stream2.next() => values.push(v),
             else => break,

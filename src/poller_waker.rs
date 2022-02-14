@@ -1,4 +1,4 @@
-use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 use crate::static_waker::StaticWaker;
 

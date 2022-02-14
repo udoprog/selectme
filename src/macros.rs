@@ -1,54 +1,3 @@
-/// This macro works roughly the same as [inline!] with a few exceptions:
-///
-/// * [inline!] immediately evaluates the selection asynchronously while
-///   [select!] doesn't. This means that it's not possible to access the
-///   surrounding context to do things such as break out of loops.
-/// * [select!] returns an instance of [Select][crate::Select] allowing for a
-///   bit more flexibility.
-///
-/// See [inline!][crate::inline] for specific documentation.
-///
-/// # Examples
-///
-/// Since we can't break directly out of something using [select!] we must take
-/// care of this ourselves. Below this is done by wrapping the result of each
-/// branch in an [Option] variant.
-///
-/// ```
-/// use tokio_stream::{self as stream, StreamExt};
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let mut stream1 = stream::iter(vec![1, 2, 3]);
-///     let mut stream2 = stream::iter(vec![4, 5, 6]);
-///
-///     let mut values = vec![];
-///
-///     let mut select =  selectme::select! {
-///         Some(v) = stream1.next() => Some(v),
-///         Some(v) = stream2.next() => Some(v),
-///         else => None,
-///     };
-///     tokio::pin!(select);
-///
-///     while let Some(v) = select.as_mut().next_pinned().await {
-///         values.push(v);
-///     }
-///
-///     assert_eq!(&[1, 4], &values[..]);
-/// }
-/// ```
-///
-/// Note how only `stream1.next()` and `stream2.next()` is evaluated once. These
-/// two futures are stored inside of the `select!` instances and are not
-/// refreshed automatically.
-#[macro_export]
-macro_rules! select {
-    ($($tt:tt)*) => {
-        $crate::__support::select!($crate, $($tt)*)
-    }
-}
-
 /// Waits on multiple concurrent branches, returning when the **first** branch
 /// completes, cancelling the remaining branches.
 ///
@@ -98,6 +47,18 @@ macro_rules! select {
 /// 5. If **all** branches are disabled, evaluate the `else` expression. If no
 ///    else branch is provided, panic.
 ///
+/// ## Fairness
+///
+/// This [select!] implementation follows the same principle as [unicycle]. We
+/// maintain an atomic bitset of wake interest where each child task in the
+/// scheduler can register their interest in being woken up. Once this happens
+/// and the task is woken up, any child tasks that have registered interest will
+/// be polled in order.
+///
+/// This [select!] implementation can accomplish this without allocating. All
+/// the infrastructure necessary to drive all child tasks are statically
+/// allocated once and used as appropriate.
+///
 /// # Runtime characteristics
 ///
 /// By running all async expressions on the current task, the expressions are
@@ -132,7 +93,7 @@ macro_rules! select {
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     selectme::inline! {
+///     selectme::select! {
 ///         _ = do_stuff_async() => {
 ///             println!("do_stuff_async() completed first")
 ///         }
@@ -153,7 +114,7 @@ macro_rules! select {
 ///     let mut stream1 = stream::iter(vec![1, 2, 3]);
 ///     let mut stream2 = stream::iter(vec![4, 5, 6]);
 ///
-///     let next = selectme::inline! {
+///     let next = selectme::select! {
 ///         Some(v) = stream1.next() => v,
 ///         Some(v) = stream2.next() => v,
 ///     };
@@ -177,7 +138,7 @@ macro_rules! select {
 ///     let mut values = vec![];
 ///
 ///     loop {
-///         selectme::inline! {
+///         selectme::select! {
 ///             Some(v) = stream1.next() => values.push(v),
 ///             Some(v) = stream2.next() => values.push(v),
 ///             else => break,
@@ -210,7 +171,7 @@ macro_rules! select {
 ///     tokio::pin!(sleep);
 ///
 ///     loop {
-///         selectme::inline! {
+///         selectme::select! {
 ///             maybe_v = stream.next() => {
 ///                 if let Some(v) = maybe_v {
 ///                     println!("got = {}", v);
@@ -249,7 +210,7 @@ macro_rules! select {
 ///     let mut b = None;
 ///
 ///     while a.is_none() || b.is_none() {
-///         selectme::inline! {
+///         selectme::select! {
 ///             v1 = (&mut rx1) if a.is_none() => a = Some(v1.unwrap()),
 ///             v2 = (&mut rx2) if b.is_none() => b = Some(v2.unwrap()),
 ///         }
@@ -270,7 +231,7 @@ macro_rules! select {
 ///     let mut count = 0u8;
 ///
 ///     loop {
-///         selectme::inline! {
+///         selectme::select! {
 ///             _ = async {} if count < 1 => {
 ///                 count += 1;
 ///                 assert_eq!(count, 1);
@@ -318,7 +279,7 @@ macro_rules! select {
 ///     tokio::pin!(sleep);
 ///
 ///     while !sleep.is_elapsed() {
-///         selectme::inline! {
+///         selectme::select! {
 ///             _ = &mut sleep if !sleep.is_elapsed() => {
 ///                 println!("operation timed out");
 ///             }
@@ -354,7 +315,7 @@ macro_rules! select {
 ///     tokio::pin!(sleep);
 ///
 ///     loop {
-///         selectme::inline! {
+///         selectme::select! {
 ///             _ = &mut sleep => {
 ///                 println!("operation timed out");
 ///                 break;
@@ -366,9 +327,11 @@ macro_rules! select {
 ///     }
 /// }
 /// ```
+///
+/// [unicycle]: https://docs.rs/unicycle
 #[macro_export]
-macro_rules! inline {
-    ($($tt:tt)*) => {
-        $crate::__support::inline!($crate, $($tt)*)
-    }
+macro_rules! select {
+    ($($tt:tt)*) => {{
+        $crate::__support::select!($crate, $($tt)*)
+    }};
 }

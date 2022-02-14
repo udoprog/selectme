@@ -3,7 +3,7 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v1
@@ -11,11 +11,20 @@ jobs:
       with:
         toolchain: stable
         override: true
-    - name: cargo build
+    - name: cargo test
       uses: actions-rs/cargo@v1
       with:
-        command: build
-    - name: cargo test
+        command: test
+
+  no_std_test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    - name: cargo test --no-default-features
       uses: actions-rs/cargo@v1
       with:
         command: test
