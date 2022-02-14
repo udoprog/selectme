@@ -34,6 +34,11 @@ impl Set {
 pub struct Snapshot(u64);
 
 impl Snapshot {
+    /// Construct a new snapshot with the specified `value`.
+    pub(crate) fn new(value: u64) -> Self {
+        Self(value)
+    }
+
     /// Test if the snapshot is empty.
     pub(crate) fn is_empty(&self) -> bool {
         self.0 == 0

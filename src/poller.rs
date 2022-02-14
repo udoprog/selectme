@@ -6,8 +6,14 @@ use core::task::{Context, Poll};
 use crate::set::Snapshot;
 use crate::static_waker::StaticWaker;
 
-/// The type produced by the [select!] macro.
-pub struct Select {
+/// Indicator index used when all futures have been disabled.
+pub const DISABLED: usize = usize::MAX;
+
+/// Helper type used to implement the [select!][crate::select] macro.
+///
+/// This keeps track of tasks that should be polled and interactions with the
+/// [StaticWaker].
+pub struct Poller {
     /// Mask of tasks which are active.
     mask: Snapshot,
     /// Indicates if a merge should be performed.
@@ -18,10 +24,8 @@ pub struct Select {
     snapshot: Snapshot,
 }
 
-impl Select {
-    pub(crate) fn new(waker: &'static StaticWaker) -> Self {
-        let snapshot = waker.set.take();
-
+impl Poller {
+    pub(crate) fn new(waker: &'static StaticWaker, snapshot: Snapshot) -> Self {
         Self {
             mask: snapshot,
             merge: true,
@@ -74,7 +78,7 @@ impl Select {
             let this = self.get_unchecked_mut();
 
             if this.mask.is_empty() {
-                return Poll::Ready(crate::__support::DISABLED);
+                return Poll::Ready(DISABLED);
             }
 
             if take(&mut this.merge) && this.merge(cx) {
@@ -96,7 +100,7 @@ impl Select {
     }
 }
 
-impl Future for Select {
+impl Future for Poller {
     type Output = usize;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -106,7 +110,7 @@ impl Future for Select {
 
 /// The future implementation of [Select::next].
 struct Next<'a> {
-    select: &'a mut Select,
+    select: &'a mut Poller,
 }
 
 impl Future for Next<'_> {

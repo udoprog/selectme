@@ -29,9 +29,8 @@ async fn poller_test() {
 
             let mut __fut = (Some(s1.as_mut()), Some(s2.as_mut()));
 
-            private::WAKER.reset(if s1_done { 0 } else { 1 } | if s2_done { 0 } else { 2 });
-
-            let mut select = ::selectme::__support::select(&private::WAKER);
+            let initial = if s1_done { 0 } else { 1 } | if s2_done { 0 } else { 2 };
+            let mut select = ::selectme::__support::poller(&private::WAKER, initial);
 
             loop {
                 match select.next().await {

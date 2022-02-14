@@ -65,8 +65,7 @@ mod poller_waker;
 
 mod static_waker;
 
-mod select;
-pub use self::select::Select;
+mod poller;
 
 #[macro_use]
 mod macros;
@@ -74,6 +73,7 @@ mod macros;
 /// Hidden support module used by macros.
 #[doc(hidden)]
 pub mod __support {
+    pub use crate::poller::DISABLED;
     pub use crate::poller_waker::{poll_by_ref, PollerWaker};
     pub use crate::static_waker::StaticWaker;
     pub use core::future::Future;
@@ -81,13 +81,13 @@ pub mod __support {
     pub use core::task::Poll;
     pub use selectme_macros::select;
 
-    use crate::select::Select;
-
-    /// Indicator index used when all futures have been disabled.
-    pub const DISABLED: usize = usize::MAX;
+    use crate::poller::Poller;
 
     /// Construct a new polling context from a custom function.
-    pub fn select(waker: &'static StaticWaker) -> Select {
-        Select::new(waker)
+    #[inline]
+    pub fn poller(waker: &'static StaticWaker, mask: u64) -> Poller {
+        waker.set.reset(0);
+        let snapshot = crate::set::Snapshot::new(mask);
+        Poller::new(waker, snapshot)
     }
 }

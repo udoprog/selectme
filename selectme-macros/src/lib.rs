@@ -19,7 +19,7 @@ pub fn select(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     match p.parse() {
         Ok(output) => {
-            output.expand(&mut stream, Span::mixed_site());
+            output.expand().to_tokens(&mut stream, Span::mixed_site());
         }
         Err(errors) => {
             format_errors(errors, &mut stream, Span::mixed_site());
@@ -36,7 +36,7 @@ fn format_errors(errors: Vec<Error>, stream: &mut TokenStream, span: Span) {
     if let Some(last) = it.next_back() {
         for error in it {
             error.to_tokens(stream, span);
-            stream.tokens(span, ';');
+            stream.write(span, ';');
         }
 
         last.to_tokens(stream, span);

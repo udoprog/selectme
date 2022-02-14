@@ -19,11 +19,16 @@ impl TokenStream {
     }
 
     /// Push the given sequence of tokens.
-    pub fn tokens<T>(&mut self, span: Span, tt: T)
+    pub fn write<T>(&mut self, span: Span, tt: T)
     where
         T: ToTokens,
     {
         tt.to_tokens(self, span);
+    }
+
+    /// Get a checkpoint of the current location in the tree.
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint(self.inner.len())
     }
 
     /// Push the given stream as a group.
@@ -42,10 +47,5 @@ impl TokenStream {
     /// Extend the current stream from another.
     pub fn extend(&mut self, mut other: Self) {
         self.inner.append(&mut other.inner);
-    }
-
-    /// Get a checkpoint of the current location in the tree.
-    pub fn checkpoint(&self) -> Checkpoint {
-        Checkpoint(self.inner.len())
     }
 }

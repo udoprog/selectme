@@ -1,11 +1,10 @@
 use std::ops;
 
-use proc_macro::{Delimiter, Span, TokenTree};
+use proc_macro::{Delimiter, TokenTree};
 
 use crate::parser::{Block, Branch, Else};
-use crate::to_tokens::{braced, bracketed, from_fn, parens, string, ToTokens};
+use crate::to_tokens::{braced, bracketed, from_fn, parens, string, SpannedStream, ToTokens};
 use crate::tok::{self, S};
-use crate::token_stream::TokenStream;
 
 /// The name of the output enum.
 const OUT: &str = "Out";
@@ -47,13 +46,13 @@ impl Output {
         (
             ("pub", "enum", OUT),
             branch_generics(&self.branches),
-            braced(from_fn(|stream, span| {
+            braced(from_fn(|s| {
                 for b in &self.branches {
-                    stream.tokens(span, (b.variant.as_ref(), parens(b.generic.as_ref()), ','));
+                    s.write((b.variant.as_ref(), parens(b.generic.as_ref()), ','));
                 }
 
                 if self.else_branch.is_some() {
-                    stream.tokens(span, ("Disabled", ','));
+                    s.write(("Disabled", ','));
                 }
             })),
         )
@@ -61,58 +60,42 @@ impl Output {
 
     /// Private module declaration.
     fn private_mod(&self) -> impl ToTokens + '_ {
-        from_fn(move |stream, span| {
-            let poller = (self.support(), "PollerWaker");
-            let static_ = (self.support(), "StaticWaker");
+        let poller = (self.support(), "PollerWaker");
+        let static_ = (self.support(), "StaticWaker");
 
-            let private_mod = braced(from_fn(|stream, _| {
-                stream.tokens(
-                    span,
-                    (
-                        ("pub", "static", "WAKER", ':', static_),
-                        '=',
-                        (static_, S, "new", parens(())),
-                        ';',
-                    ),
-                );
+        let private_mod = braced(from_fn(move |s| {
+            s.write((
+                ("pub", "static", "WAKER", ':', static_, '='),
+                (static_, S, "new", parens(()), ';'),
+            ));
 
-                for b in &self.branches {
-                    stream.tokens(
-                        span,
-                        (
-                            ("pub", "static", b.waker.as_ref(), ':', poller),
-                            '=',
-                            (poller, S, "new", parens(('&', "WAKER", ',', b.index)), ';'),
-                        ),
-                    );
-                }
+            for b in &self.branches {
+                s.write((
+                    ("pub", "static", b.waker.as_ref(), ':', poller, '='),
+                    (poller, S, "new", parens(('&', "WAKER", ',', b.index)), ';'),
+                ));
+            }
 
-                stream.tokens(span, self.out_enum());
-            }));
+            s.write(self.out_enum());
+        }));
 
-            stream.tokens(span, ("mod", PRIVATE, private_mod));
-        })
+        ("mod", PRIVATE, private_mod)
     }
 
     fn futures(&self) -> impl ToTokens + '_ {
-        let init = from_fn(|stream, span| {
+        let init = from_fn(|s| {
             for b in &self.branches {
                 if let Some(c) = &b.condition {
-                    stream.tokens(
-                        span,
-                        tok::if_else(
-                            c.var.as_ref(),
-                            tok::Option::Some(&self.tokens[b.expr.clone()]),
-                            tok::Option::<()>::None,
-                        ),
-                    );
-                } else if b.fuse {
-                    stream.tokens(span, tok::Option::Some(&self.tokens[b.expr.clone()]));
+                    s.write(tok::if_else(
+                        c.var.as_ref(),
+                        tok::Option::Some(&self.tokens[b.expr.clone()]),
+                        tok::Option::<()>::None,
+                    ));
                 } else {
-                    stream.tokens(span, &self.tokens[b.expr.clone()]);
+                    s.write(&self.tokens[b.expr.clone()]);
                 }
 
-                stream.tokens(span, ',');
+                s.write(',');
             }
         });
 
@@ -120,8 +103,10 @@ impl Output {
     }
 
     fn matches(&self) -> impl ToTokens + '_ {
-        from_fn(move |stream, span| {
+        from_fn(move |s| {
             for b in &self.branches {
+                s.write((b.index, tok::ROCKET));
+
                 let fut = (
                     "unsafe",
                     braced((
@@ -130,45 +115,32 @@ impl Output {
                     )),
                 );
 
-                stream.tokens(span, (b.index, tok::ROCKET));
-
-                if b.condition.is_some() || b.fuse {
+                if b.condition.is_some() {
                     let assign = ("let", "mut", b.pin.as_ref(), '=', fut, ';');
-                    let poll = self.poll(b, Some(b.pin.as_ref()));
+                    let poll = self.poll_body(b, Some(b.pin.as_ref()));
 
                     let poll = (
-                        ("if", "let", tok::Option::Some("__fut")),
-                        '=',
-                        (
-                            "Option",
-                            S,
-                            "as_pin_mut",
-                            parens(tok::as_mut(b.pin.as_ref())),
-                        ),
+                        ("if", "let", tok::Option::Some("__fut"), '='),
+                        ("Option", S, "as_pin_mut"),
+                        parens(tok::as_mut(b.pin.as_ref())),
                         braced(poll),
                     );
 
-                    stream.tokens(span, braced((assign, poll)));
+                    s.write(braced((assign, poll)));
                 } else {
                     let assign = ("let", "__fut", '=', fut, ';');
-                    let poll = self.poll(b, None);
-                    stream.tokens(span, braced((assign, poll)));
+                    let poll = self.poll_body(b, None);
+                    s.write(braced((assign, poll)));
                 }
             }
 
             if let Some(e) = &self.else_branch {
                 if self.else_branch.is_some() {
                     let body = ("break", (PRIVATE, S, OUT, S, "Disabled"), ';');
-                    stream.tokens(
-                        span,
-                        ((self.support(), "DISABLED"), tok::ROCKET, braced(body)),
-                    );
+                    s.write(((self.support(), "DISABLED"), tok::ROCKET, braced(body)));
                 } else {
                     let body = ("break", self.block(&e.block), ';');
-                    stream.tokens(
-                        span,
-                        ((self.support(), "DISABLED"), tok::ROCKET, braced(body)),
-                    );
+                    s.write(((self.support(), "DISABLED"), tok::ROCKET, braced(body)));
                 }
             }
 
@@ -177,37 +149,29 @@ impl Output {
                 parens((string("no branch with index `{}`"), ',', "n")),
             );
 
-            stream.tokens(span, ("n", tok::ROCKET, braced(panic_branch)));
+            s.write(("n", tok::ROCKET, braced(panic_branch)));
         })
     }
 
+    /// Generate the immediate match which performs a borrowing match over the
+    /// pattern supplied by the user to determine whether we should break out of
+    /// the loop with a value or not.
     fn immediate_match<'a>(&'a self, b: &'a Branch) -> impl ToTokens + 'a {
-        from_fn(|stream, span| {
-            stream.tokens(
-                span,
-                ('#', bracketed(("allow", parens("unused_variables")))),
-            );
+        let pat = clean_pattern(self.tokens[b.binding.clone()].iter().cloned());
 
-            stream.tokens(
-                span,
-                (
-                    ("if", "let"),
-                    (clean_pattern(self.tokens[b.binding.clone()].iter().cloned())),
-                    ('=', '&', "out"),
-                ),
-            );
+        let body = (
+            "break",
+            (PRIVATE, S, OUT, S, b.variant.as_ref()),
+            parens("out"),
+        );
 
-            stream.tokens(
-                span,
-                braced((
-                    "break",
-                    (PRIVATE, S, OUT, S, b.variant.as_ref(), parens("out")),
-                    ';',
-                )),
-            );
-        })
+        (
+            ('#', bracketed(("allow", parens("unused_variables")))),
+            ("if", "let", pat, '=', '&', "out", braced((body, ';'))),
+        )
     }
 
+    /// Generate the output matching branch.
     fn out_branch<'a>(&'a self, b: &'a Branch) -> impl ToTokens + 'a {
         (
             (PRIVATE, S, OUT, S, b.variant.as_ref()),
@@ -216,6 +180,7 @@ impl Output {
         )
     }
 
+    /// Generate the output matching "else" branch.
     fn else_branch<'a>(&'a self, e: &'a Else) -> impl ToTokens + 'a {
         (
             (PRIVATE, S, OUT, S, "Disabled"),
@@ -225,63 +190,50 @@ impl Output {
 
     /// Render a parsed block.
     fn block<'a>(&'a self, block: &'a Block) -> impl ToTokens + 'a {
-        from_fn(move |stream, span| match block {
+        from_fn(move |s| match block {
             Block::Group(range) => {
-                stream.tokens(span, &self.tokens[range.clone()]);
+                s.write(&self.tokens[range.clone()]);
             }
             Block::Expr(range) => {
-                let checkpoint = stream.checkpoint();
-                stream.tokens(span, &self.tokens[range.clone()]);
-                stream.group(span, Delimiter::Brace, checkpoint);
+                s.write(braced(&self.tokens[range.clone()]));
             }
         })
     }
 
-    fn poll<'a>(&'a self, b: &'a Branch, unset: Option<&'a str>) -> impl ToTokens + 'a {
-        let inner_poll = ("Future", S, "poll", parens(("__fut", ',', "cx")));
+    fn poll_body<'a>(&'a self, b: &'a Branch, unset: Option<&'a str>) -> impl ToTokens + 'a {
+        let future_poll = ("Future", S, "poll", parens(("__fut", ',', "cx")));
 
         (
             ("if", "let", tok::Poll::Ready("out")),
             '=',
             (
-                self.support(),
-                "poll_by_ref",
+                (self.support(), "poll_by_ref"),
                 parens((
-                    '&',
-                    PRIVATE,
-                    S,
-                    b.waker.as_ref(),
-                    ',',
-                    tok::piped("cx"),
-                    inner_poll,
+                    ('&', PRIVATE, S, b.waker.as_ref(), ','),
+                    (tok::piped("cx"), future_poll),
                 )),
             ),
             braced((
                 unset.map(|var| (var, '.', "set", parens(tok::Option::<()>::None), ';')),
                 ("__select", '.', "clear", parens(b.index), ';'),
-                from_fn(move |stream, span| {
-                    stream.tokens(span, self.immediate_match(b));
-                }),
+                self.immediate_match(b),
             )),
         )
     }
 
-    fn conditions(&self, stream: &mut TokenStream, span: Span) -> usize {
+    fn conditions(&self, s: &mut SpannedStream<'_>) -> usize {
         let mut reset_base = 0;
 
         for b in &self.branches {
             match &b.condition {
                 Some(c) => {
-                    stream.tokens(
-                        span,
-                        (
-                            "let",
-                            c.var.as_ref(),
-                            '=',
-                            &self.tokens[c.range.clone()],
-                            ';',
-                        ),
-                    );
+                    s.write((
+                        "let",
+                        c.var.as_ref(),
+                        '=',
+                        &self.tokens[c.range.clone()],
+                        ';',
+                    ));
                 }
                 None => {
                     reset_base += 1 << b.index;
@@ -292,8 +244,10 @@ impl Output {
         reset_base
     }
 
-    fn reset(&self, reset_base: usize) -> impl ToTokens + '_ {
-        let args = from_fn(move |stream, span| {
+    /// Generates the expression that should initially be used as a mask. This
+    /// ensures that disabled branches stay disabled even if woken up..
+    fn mask_expr(&self, reset_base: usize) -> impl ToTokens + '_ {
+        from_fn(move |s| {
             let mut it = self
                 .branches
                 .iter()
@@ -301,108 +255,106 @@ impl Output {
 
             if let Some((b, var)) = it.next_back() {
                 if reset_base != 0 {
-                    stream.tokens(span, reset_base);
-                    stream.tokens(span, '+');
+                    s.write((reset_base, '+'));
                 }
 
                 for (b, var) in it {
-                    stream.tokens(span, tok::if_else(var, 1 << b.index, 0));
-                    stream.tokens(span, '+');
+                    s.write((tok::if_else(var, 1 << b.index, 0), '+'));
                 }
 
-                stream.tokens(span, tok::if_else(var, 1 << b.index, 0));
+                s.write(tok::if_else(var, 1 << b.index, 0));
             } else {
-                stream.tokens(span, reset_base);
+                s.write(reset_base);
             }
-        });
-
-        (PRIVATE, S, "WAKER", '.', "reset", parens(args), ';')
+        })
     }
 
     /// Expand a select which is awaited immediately.
-    pub fn expand(self, stream: &mut TokenStream, span: Span) {
-        let start = stream.checkpoint();
+    pub fn expand(self) -> impl ToTokens {
+        from_fn(move |s| {
+            let start = s.checkpoint();
 
-        let imports = (self.support(), braced(("Future", ',', "Pin", ',', "Poll")));
+            let imports = (self.support(), braced(("Future", ',', "Pin", ',', "Poll")));
 
-        stream.tokens(span, ("use", imports, ';'));
-        stream.tokens(span, self.private_mod());
+            s.write(("use", imports, ';'));
+            s.write(self.private_mod());
 
-        let reset_base = self.conditions(stream, span);
-        stream.tokens(span, self.reset(reset_base));
+            let reset_base = self.conditions(s);
 
-        let output_body = from_fn(|stream, span| {
-            for b in &self.branches {
-                stream.tokens(span, self.out_branch(b));
-            }
+            let output_body = from_fn(|s| {
+                for b in &self.branches {
+                    s.write(self.out_branch(b));
+                }
 
-            if let Some(e) = &self.else_branch {
-                stream.tokens(span, self.else_branch(e));
-            }
+                if let Some(e) = &self.else_branch {
+                    s.write(self.else_branch(e));
+                }
 
-            let panic_ = (
-                ("unreachable", '!'),
-                parens(string("branch cannot be reached")),
+                let panic_ = (
+                    ("unreachable", '!'),
+                    parens(string("branch cannot be reached")),
+                );
+
+                s.write(("_", tok::ROCKET, braced(panic_)));
+            });
+
+            let futures_decl = (self.futures(), ';');
+
+            let select_decl = (
+                ("let", "mut", "__select"),
+                '=',
+                (
+                    self.support(),
+                    "poller",
+                    parens((('&', PRIVATE, S, "WAKER"), ',', self.mask_expr(reset_base))),
+                ),
+                ';',
             );
 
-            stream.tokens(span, ("_", tok::ROCKET, braced(panic_)));
-        });
+            let loop_decl = (
+                "loop",
+                braced((
+                    ("match", "__select", '.', "next", parens(()), '.', "await"),
+                    braced(self.matches()),
+                )),
+            );
 
-        let futures_decl = (self.futures(), ';');
-
-        let select_decl = (
-            ("let", "mut", "__select"),
-            '=',
-            (self.support(), "select", parens(('&', PRIVATE, S, "WAKER"))),
-            ';',
-        );
-
-        let loop_decl = (
-            "loop",
-            braced((
-                ("match", "__select", '.', "next", parens(()), '.', "await"),
-                braced(self.matches()),
-            )),
-        );
-
-        stream.tokens(
-            span,
-            (
+            s.write((
                 "match",
                 braced((futures_decl, select_decl, loop_decl)),
                 braced(output_body),
-            ),
-        );
-        stream.group(span, Delimiter::Brace, start);
+            ));
+            s.group(Delimiter::Brace, start);
+        })
     }
 }
 
 /// Clean up a pattern by skipping over any `mut` and `&` tokens.
 fn clean_pattern(tree: impl Iterator<Item = TokenTree>) -> impl ToTokens {
-    from_fn(move |stream, span| {
+    from_fn(move |s| {
         for tt in tree {
             match tt {
                 TokenTree::Group(g) => {
-                    let checkpoint = stream.checkpoint();
-                    clean_pattern(g.stream().into_iter()).to_tokens(stream, span);
-                    stream.group(span, g.delimiter(), checkpoint);
+                    let checkpoint = s.checkpoint();
+                    s.write(clean_pattern(g.stream().into_iter()));
+                    s.group(g.delimiter(), checkpoint);
                 }
                 TokenTree::Ident(i) => {
                     if i.to_string() == "mut" {
                         continue;
                     }
 
-                    stream.push(TokenTree::Ident(i));
+                    s.push(TokenTree::Ident(i));
                 }
                 TokenTree::Punct(p) => {
                     if p.as_char() == '&' {
                         continue;
                     }
 
-                    stream.push(TokenTree::Punct(p));
+                    s.push(TokenTree::Punct(p));
                 }
                 tt => {
-                    stream.push(tt);
+                    s.push(tt);
                 }
             }
         }
@@ -410,13 +362,13 @@ fn clean_pattern(tree: impl Iterator<Item = TokenTree>) -> impl ToTokens {
 }
 
 fn branch_generics(branches: &[Branch]) -> impl ToTokens + '_ {
-    from_fn(move |stream, span| {
-        stream.tokens(span, '<');
+    from_fn(move |s| {
+        s.write('<');
 
         for b in branches {
-            stream.tokens(span, (b.generic.as_ref(), ','));
+            s.write((b.generic.as_ref(), ','));
         }
 
-        stream.tokens(span, '>');
+        s.write('>');
     })
 }

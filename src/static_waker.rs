@@ -17,9 +17,4 @@ impl StaticWaker {
             set: Set::empty(),
         }
     }
-
-    /// Reset the current static waker.
-    pub fn reset(&self, snapshot: u64) {
-        self.set.reset(snapshot);
-    }
 }

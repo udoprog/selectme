@@ -282,7 +282,6 @@ impl Parser {
 
         let branch = Branch {
             index,
-            fuse: true,
             binding,
             expr,
             block,
@@ -391,8 +390,6 @@ pub struct Condition {
 pub struct Branch {
     /// Branch index.
     pub index: usize,
-    /// If the branch should automatically fuse.
-    pub fuse: bool,
     /// Range for the binding to use.
     pub binding: ops::Range<usize>,
     /// Range for the expression to be evaluated as a future.
