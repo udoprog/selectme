@@ -24,6 +24,7 @@ selectme-macros = { path = "selectme-macros", version = "0.2.3" }
 trybuild = "1.0"
 tokio = { version = "1.16.1", features = ["macros", "time", "rt", "rt-multi-thread"] }
 tokio-stream = "0.1.8"
+rand = "0.8.5"
 
 [workspace]
 members = [
