@@ -6,19 +6,15 @@ use tokio::time;
 pub async fn main() {
     let s1 = time::sleep(Duration::from_secs(2));
     tokio::pin!(s1);
-    let mut s1_done = false;
 
     let s2 = time::sleep(Duration::from_secs(5));
     tokio::pin!(s2);
-    let mut s2_done = false;
 
     let output = selectme::select! {
-        () = s1 if !s1_done => {
-            s1_done = true;
+        () = s1 => {
             true
         }
-        () = s2 if !s2_done => {
-            s2_done = true;
+        () = s2 => {
             true
         }
         else => {

@@ -4,11 +4,16 @@ use std::ops;
 use proc_macro::{Delimiter, Ident, Spacing, Span, TokenTree};
 
 use crate::error::Error;
-use crate::output::{Output, Prefix};
+use crate::output::Output;
 
 enum Segment {
     Branch(Branch),
     Else(Else),
+}
+
+pub enum Block {
+    Group(ops::Range<usize>),
+    Expr(ops::Range<usize>),
 }
 
 // Punctuations that we look for.
@@ -41,6 +46,9 @@ impl Parser {
         let mut else_branch = None;
         let mut n = 0;
 
+        self.parse_until(COMMA);
+        let krate = 0..self.tokens.len();
+
         while self.nth(0).is_some() {
             if let Some(segment) = self.parse_segment(n) {
                 match segment {
@@ -61,12 +69,7 @@ impl Parser {
             return Err(self.errors);
         }
 
-        Ok(Output::new(
-            self.tokens,
-            branches,
-            else_branch,
-            Prefix::SelectMe,
-        ))
+        Ok(Output::new(self.tokens, krate, branches, else_branch))
     }
 
     /// Skip one of the specified punctuations.
@@ -252,8 +255,8 @@ impl Parser {
                 }
             }
 
-            let branch = self.parse_branch()?;
-            return Some(Segment::Else(Else { branch }));
+            let block = self.parse_block()?;
+            return Some(Segment::Else(Else { block }));
         }
 
         let binding = if self.parse_until(EQ) {
@@ -270,7 +273,7 @@ impl Parser {
         };
 
         let (expr, condition) = self.parse_expr(binding.end)?;
-        let branch = self.parse_branch()?;
+        let block = self.parse_block()?;
 
         let condition = condition.map(|range| Condition {
             var: format!("__cond{}", index).into(),
@@ -282,7 +285,7 @@ impl Parser {
             fuse: true,
             binding,
             expr,
-            branch,
+            block,
             waker: format!("WAKER{}", index).into(),
             pin: format!("__fut{}", index).into(),
             generic: format!("T{}", index).into(),
@@ -322,20 +325,32 @@ impl Parser {
     }
 
     /// Parse the next group.
-    fn parse_branch(&mut self) -> Option<ops::Range<usize>> {
+    fn parse_block(&mut self) -> Option<Block> {
         let start = self.tokens.len();
 
-        let span = match self.bump() {
+        match self.nth(0) {
             Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Brace => {
-                self.tokens.push(TokenTree::Group(group));
-                return Some(start..self.tokens.len());
+                let tt = self.bump();
+                self.tokens.extend(tt);
+                Some(Block::Group(start..self.tokens.len()))
             }
-            Some(tt) => tt.span(),
-            None => Span::call_site(),
-        };
+            Some(tt) => {
+                let span = tt.span();
 
-        self.errors.push(Error::new(span, "expected braced group"));
-        None
+                if !self.parse_until(COMMA) {
+                    self.errors
+                        .push(Error::new(span, "expected expression followed by `,`"));
+                    return None;
+                }
+
+                Some(Block::Expr(start..self.tokens.len()))
+            }
+            None => {
+                self.errors
+                    .push(Error::new(Span::call_site(), "expected braced group"));
+                None
+            }
+        }
     }
 
     /// Access the token at the given offset.
@@ -383,7 +398,7 @@ pub struct Branch {
     /// Range for the expression to be evaluated as a future.
     pub expr: ops::Range<usize>,
     /// Range for the branch.
-    pub branch: ops::Range<usize>,
+    pub block: Block,
     /// The name of the child waker for this block.
     pub waker: Box<str>,
     /// The name of the pin variable.
@@ -399,7 +414,7 @@ pub struct Branch {
 /// Code for the else branch.
 pub struct Else {
     /// Range for the branch.
-    pub branch: ops::Range<usize>,
+    pub block: Block,
 }
 
 /// A complete punctuation.

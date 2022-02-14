@@ -1,6 +1,8 @@
+use std::ops;
+
 use proc_macro::{Delimiter, Span, TokenTree};
 
-use crate::parser::{Branch, Else};
+use crate::parser::{Block, Branch, Else};
 use crate::to_tokens::{braced, bracketed, from_fn, parens, string, ToTokens};
 use crate::tok::{self, S};
 use crate::token_stream::TokenStream;
@@ -11,25 +13,31 @@ const OUT: &str = "Out";
 /// The parsed output.
 pub struct Output {
     tokens: Vec<TokenTree>,
+    krate: ops::Range<usize>,
     branches: Vec<Branch>,
     else_branch: Option<Else>,
-    prefix: Prefix,
 }
 
 impl Output {
     /// Construct new output.
     pub(crate) fn new(
         tokens: Vec<TokenTree>,
+        krate: ops::Range<usize>,
         branches: Vec<Branch>,
         else_branch: Option<Else>,
-        prefix: Prefix,
     ) -> Self {
         Self {
             tokens,
+            krate,
             branches,
             else_branch,
-            prefix,
         }
+    }
+
+    /// Render the support module.
+    fn support(&self) -> impl ToTokens + Copy + '_ {
+        let toks = &self.tokens[self.krate.clone()];
+        (toks, S, "__support", S)
     }
 
     /// Output enumeration.
@@ -52,8 +60,8 @@ impl Output {
     /// Private module declaration.
     fn private_mod(&self, immediate: bool) -> impl ToTokens + '_ {
         from_fn(move |stream, span| {
-            let poller = (self.prefix, "PollerWaker");
-            let static_ = (self.prefix, "StaticWaker");
+            let poller = (self.support(), "PollerWaker");
+            let static_ = (self.support(), "StaticWaker");
 
             let private_mod = braced(from_fn(|stream, _| {
                 stream.tokens(
@@ -155,14 +163,16 @@ impl Output {
                         tok::Poll::Ready(("private", S, OUT, S, "Disabled")),
                         ';',
                     );
-                    stream.tokens(span, ("usize", S, "MAX", tok::ROCKET, braced(body)));
-                } else {
-                    let body = (
-                        "return",
-                        tok::Poll::Ready(&self.tokens[e.branch.clone()]),
-                        ';',
+                    stream.tokens(
+                        span,
+                        ((self.support(), "DISABLED"), tok::ROCKET, braced(body)),
                     );
-                    stream.tokens(span, ("usize", S, "MAX", tok::ROCKET, braced(body)));
+                } else {
+                    let body = ("return", tok::Poll::Ready(self.block(&e.block)), ';');
+                    stream.tokens(
+                        span,
+                        ((self.support(), "DISABLED"), tok::ROCKET, braced(body)),
+                    );
                 }
             }
 
@@ -181,16 +191,16 @@ impl Output {
                 span,
                 ('#', bracketed(("allow", parens("unused_variables")))),
             );
+
             stream.tokens(
                 span,
                 (
                     ("if", "let"),
-                    (clean_pattern(
-                        self.tokens[b.binding.clone()].iter().cloned(),
-                    ),),
+                    (clean_pattern(self.tokens[b.binding.clone()].iter().cloned())),
                     ('=', '&', "out"),
                 ),
             );
+
             stream.tokens(
                 span,
                 braced((
@@ -202,19 +212,49 @@ impl Output {
         })
     }
 
+    fn deferred_match<'a>(&'a self, b: &'a Branch) -> impl ToTokens + 'a {
+        from_fn(|stream, span| {
+            stream.tokens(
+                span,
+                (
+                    "if",
+                    "let",
+                    &self.tokens[b.binding.clone()],
+                    '=',
+                    "out",
+                    braced(("return", tok::Poll::Ready(self.block(&b.block)), ';')),
+                ),
+            );
+        })
+    }
+
     fn immediate_out_branch<'a>(&'a self, b: &'a Branch) -> impl ToTokens + 'a {
         (
             ("private", S, OUT, S, b.variant.as_ref()),
             parens(&self.tokens[b.binding.clone()]),
-            (tok::ROCKET, &self.tokens[b.branch.clone()]),
+            (tok::ROCKET, self.block(&b.block)),
         )
     }
 
     fn immediate_else_branch<'a>(&'a self, e: &'a Else) -> impl ToTokens + 'a {
         (
             ("private", S, OUT, S, "Disabled"),
-            (tok::ROCKET, &self.tokens[e.branch.clone()]),
+            (tok::ROCKET, self.block(&e.block)),
         )
+    }
+
+    /// Render a parsed block.
+    fn block<'a>(&'a self, block: &'a Block) -> impl ToTokens + 'a {
+        from_fn(move |stream, span| match block {
+            Block::Group(range) => {
+                stream.tokens(span, &self.tokens[range.clone()]);
+            }
+            Block::Expr(range) => {
+                let checkpoint = stream.checkpoint();
+                stream.tokens(span, &self.tokens[range.clone()]);
+                stream.group(span, Delimiter::Brace, checkpoint);
+            }
+        })
     }
 
     fn poll<'a>(
@@ -229,7 +269,7 @@ impl Output {
             ("if", "let", tok::Poll::Ready("out")),
             '=',
             (
-                self.prefix,
+                self.support(),
                 "poll_by_ref",
                 parens((
                     '&',
@@ -243,25 +283,12 @@ impl Output {
             ),
             braced((
                 unset.map(|var| (var, '.', "set", parens(tok::Option::<()>::None), ';')),
+                ("__mask", '.', "clear", parens("__index"), ';'),
                 from_fn(move |stream, span| {
                     if immediate {
                         stream.tokens(span, self.immediate_match(b));
                     } else {
-                        stream.tokens(
-                            span,
-                            (
-                                "if",
-                                "let",
-                                &self.tokens[b.binding.clone()],
-                                '=',
-                                "out",
-                                braced((
-                                    "return",
-                                    tok::Poll::Ready(&self.tokens[b.branch.clone()]),
-                                    ';',
-                                )),
-                            ),
-                        );
+                        stream.tokens(span, self.deferred_match(b));
                     }
                 }),
             )),
@@ -325,12 +352,7 @@ impl Output {
     pub fn expand(self, stream: &mut TokenStream, span: Span) {
         let start = stream.checkpoint();
 
-        let imports = (
-            self.prefix,
-            "macros",
-            S,
-            braced(("Future", ',', "Pin", ',', "Poll")),
-        );
+        let imports = (self.support(), braced(("Future", ',', "Pin", ',', "Poll")));
 
         stream.tokens(span, ("use", imports, ';'));
         stream.tokens(span, self.private_mod(false));
@@ -339,7 +361,7 @@ impl Output {
         stream.tokens(span, self.futures());
         stream.tokens(span, self.reset(reset_base));
 
-        let loop_item = ("match", "index", braced(self.match_body(false)));
+        let loop_item = ("match", "__index", braced(self.match_body(false)));
         let body = braced((loop_item, tok::Poll::<()>::Pending));
 
         let select_args = parens((
@@ -347,11 +369,11 @@ impl Output {
             ',',
             "__fut",
             ',',
-            tok::piped(("cx", ',', "mut", "__fut", ',', "index")),
+            tok::piped(("__fut", ',', "__mask", ',', "__index")),
             body,
         ));
 
-        stream.tokens(span, (self.prefix, "select", select_args));
+        stream.tokens(span, (self.support(), "select", select_args));
         stream.group(span, Delimiter::Brace, start);
     }
 
@@ -359,12 +381,7 @@ impl Output {
     pub fn expand_inline(self, stream: &mut TokenStream, span: Span) {
         let start = stream.checkpoint();
 
-        let imports = (
-            self.prefix,
-            "macros",
-            S,
-            braced(("Future", ',', "Pin", ',', "Poll")),
-        );
+        let imports = (self.support(), braced(("Future", ',', "Pin", ',', "Poll")));
 
         stream.tokens(span, ("use", imports, ';'));
         stream.tokens(span, self.private_mod(true));
@@ -373,7 +390,7 @@ impl Output {
         stream.tokens(span, self.futures());
         stream.tokens(span, self.reset(reset_base));
 
-        let loop_item = ("match", "index", braced(self.match_body(true)));
+        let loop_item = ("match", "__index", braced(self.match_body(true)));
         let body = braced((loop_item, tok::Poll::<()>::Pending));
 
         let select_args = parens((
@@ -381,7 +398,7 @@ impl Output {
             ',',
             "__fut",
             ',',
-            tok::piped(("cx", ',', "mut", "__fut", ',', "index")),
+            tok::piped(("__fut", ',', "__mask", ',', "__index")),
             body,
         ));
 
@@ -406,7 +423,7 @@ impl Output {
             span,
             (
                 "match",
-                (self.prefix, "select", select_args, '.', "await"),
+                (self.support(), "select", select_args, '.', "await"),
                 braced(output_body),
             ),
         );
@@ -457,19 +474,4 @@ fn branch_generics(branches: &[Branch]) -> impl ToTokens + '_ {
 
         stream.tokens(span, '>');
     })
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Prefix {
-    SelectMe,
-}
-
-impl ToTokens for Prefix {
-    fn to_tokens(self, stream: &mut TokenStream, span: Span) {
-        match self {
-            Prefix::SelectMe => {
-                stream.tokens(span, (S, "selectme", S));
-            }
-        }
-    }
 }

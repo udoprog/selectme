@@ -1,158 +1,62 @@
+//! [<img alt="github" src="https://img.shields.io/badge/github-udoprog/selectme?style=for-the-badge&logo=github" height="20">](https://github.com/udoprog/selectme)
+//! [<img alt="crates.io" src="https://img.shields.io/crates/v/selectme.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/selectme)
+//! [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-selectme?style=for-the-badge&logoColor=white&logo=data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDUxMiA1MTIiPjxwYXRoIGZpbGw9IiNmNWY1ZjUiIGQ9Ik00ODguNiAyNTAuMkwzOTIgMjE0VjEwNS41YzAtMTUtOS4zLTI4LjQtMjMuNC0zMy43bC0xMDAtMzcuNWMtOC4xLTMuMS0xNy4xLTMuMS0yNS4zIDBsLTEwMCAzNy41Yy0xNC4xIDUuMy0yMy40IDE4LjctMjMuNCAzMy43VjIxNGwtOTYuNiAzNi4yQzkuMyAyNTUuNSAwIDI2OC45IDAgMjgzLjlWMzk0YzAgMTMuNiA3LjcgMjYuMSAxOS45IDMyLjJsMTAwIDUwYzEwLjEgNS4xIDIyLjEgNS4xIDMyLjIgMGwxMDMuOS01MiAxMDMuOSA1MmMxMC4xIDUuMSAyMi4xIDUuMSAzMi4yIDBsMTAwLTUwYzEyLjItNi4xIDE5LjktMTguNiAxOS45LTMyLjJWMjgzLjljMC0xNS05LjMtMjguNC0yMy40LTMzLjd6TTM1OCAyMTQuOGwtODUgMzEuOXYtNjguMmw4NS0zN3Y3My4zek0xNTQgMTA0LjFsMTAyLTM4LjIgMTAyIDM4LjJ2LjZsLTEwMiA0MS40LTEwMi00MS40di0uNnptODQgMjkxLjFsLTg1IDQyLjV2LTc5LjFsODUtMzguOHY3NS40em0wLTExMmwtMTAyIDQxLjQtMTAyLTQxLjR2LS42bDEwMi0zOC4yIDEwMiAzOC4ydi42em0yNDAgMTEybC04NSA0Mi41di03OS4xbDg1LTM4Ljh2NzUuNHptMC0xMTJsLTEwMiA0MS40LTEwMi00MS40di0uNmwxMDItMzguMiAxMDIgMzguMnYuNnoiPjwvcGF0aD48L3N2Zz4K" height="20">](https://docs.rs/selectme)
+//! [<img alt="build status" src="https://img.shields.io/github/workflow/status/udoprog/selectme/CI/main?style=for-the-badge" height="20">](https://github.com/udoprog/selectme/actions?query=branch%3Amain)
+//!
 //! A fast and fair select! implementation for asynchronous programming.
+//!
+//! See [inline!] or [select!] for documentation.
+//!
+//! [inline!]: https://docs.rs/selectme/latest/selectme/macro.inline.html
+//! [select!]: https://docs.rs/selectme/latest/selectme/macro.select.html
+
+// This project contains code and documentation licensed under the MIT license
+// from the futures-rs project.
+//
+// See: https://github.com/rust-lang/futures-rs/blob/c3d3e08/LICENSE-MIT
+
+// This project contains code and documentation licensed under the MIT license
+// from the Tokio project.
+//
+// See: https://github.com/tokio-rs/tokio/blob/986b88b/LICENSE
+
+#![deny(missing_docs)]
 
 mod set;
 
 mod atomic_waker;
 
 mod poller_waker;
-pub use self::poller_waker::{poll_by_ref, PollerWaker};
 
 mod static_waker;
-pub use self::static_waker::StaticWaker;
 
-#[doc(inline)]
-pub use selectme_macros::{inline, select};
+mod select;
+pub use self::select::Select;
 
+#[macro_use]
+mod macros;
+
+/// Hidden support module used by macros.
 #[doc(hidden)]
-pub mod macros {
+pub mod __support {
+    pub use crate::poller_waker::{poll_by_ref, PollerWaker};
+    pub use crate::static_waker::StaticWaker;
+    pub use selectme_macros::{inline, select};
     pub use std::future::Future;
     pub use std::pin::Pin;
     pub use std::task::Poll;
-}
 
-use std::future::Future;
-use std::marker;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+    use crate::select::Select;
+    use crate::set::Snapshot;
 
-use self::set::Snapshot;
+    /// Indicator index used when all futures have been disabled.
+    pub const DISABLED: usize = usize::MAX;
 
-/// Indicator index used when all futures have been disabled.
-#[doc(hidden)]
-pub const DISABLED: usize = usize::MAX;
-
-pub struct Select<T, F, O> {
-    /// Mask of tasks which are active.
-    mask: Snapshot,
-    /// Reference to the static waker associated with the poller.
-    waker: &'static StaticWaker,
-    /// A snapshot of the bitset for the current things that needs polling.
-    snapshot: Snapshot,
-    /// Captured futures.
-    futures: F,
-    /// Polling function.
-    poll: T,
-    /// Marker indicating the output type.
-    _marker: marker::PhantomData<O>,
-}
-
-impl<T, F, O> Select<T, F, O> {
-    /// Merge waker into current set.
-    fn merge_from_shared(&mut self) {
-        let snapshot = self.waker.set.take();
-        self.snapshot.merge(snapshot);
-        self.snapshot.retain(self.mask);
-    }
-}
-
-impl<T, F, O> Select<T, F, O>
-where
-    T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
-{
-    /// Wait for one of the select branches to complete in a [Select] which is
-    /// [Unpin].
-    pub async fn next(&mut self) -> O
+    /// Construct a new polling context from a custom function.
+    pub fn select<T, F, O>(waker: &'static StaticWaker, futures: F, poll: T) -> Select<T, F, O>
     where
-        Self: Unpin,
+        T: FnMut(&mut F, &mut Snapshot, usize) -> Poll<O>,
     {
-        Pin::new(self).next_pinned().await
-    }
-
-    /// Wait for one of the select branches to complete in a pinned select.
-    pub fn next_pinned(self: Pin<&mut Self>) -> impl Future<Output = O> + '_ {
-        Next { select: self }
-    }
-
-    /// Inner poll implementation.
-    fn inner_poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<O> {
-        unsafe {
-            let this = self.get_unchecked_mut();
-            this.merge_from_shared();
-
-            this.waker.parent.register(cx.waker());
-
-            if this.mask.is_empty() {
-                if let Poll::Ready(output) = (this.poll)(cx, &mut this.futures, DISABLED) {
-                    return Poll::Ready(output);
-                }
-            }
-
-            for index in this.snapshot.by_ref() {
-                let index = index as usize;
-
-                if let Poll::Ready(output) = (this.poll)(cx, &mut this.futures, index) {
-                    this.mask.clear(index);
-                    return Poll::Ready(output);
-                }
-            }
-
-            Poll::Pending
-        }
-    }
-}
-
-impl<T, F, O> Future for Select<T, F, O>
-where
-    T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
-{
-    type Output = O;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.inner_poll(cx)
-    }
-}
-
-/// The future implementation of [Select::next].
-pub struct Next<'a, T> {
-    select: Pin<&'a mut T>,
-}
-
-impl<T, F, O> Future for Next<'_, Select<T, F, O>>
-where
-    T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
-{
-    type Output = O;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // SAFETY: Type is safely Unpin since the only way to access it is
-        // through [Select::next] which requires `Unpin`.
-        unsafe {
-            let this = self.get_unchecked_mut();
-            this.select.as_mut().inner_poll(cx)
-        }
-    }
-}
-
-impl<T, F, O> Drop for Select<T, F, O> {
-    fn drop(&mut self) {
-        self.waker.set.merge(self.snapshot);
-    }
-}
-
-/// Construct a new polling context from a custom function.
-#[doc(hidden)]
-pub fn select<T, F, O>(waker: &'static StaticWaker, futures: F, poll: T) -> Select<T, F, O>
-where
-    T: FnMut(&mut Context<'_>, &mut F, usize) -> Poll<O>,
-{
-    let snapshot = waker.set.take();
-
-    Select {
-        mask: snapshot,
-        waker,
-        snapshot,
-        futures,
-        poll,
-        _marker: marker::PhantomData,
+        Select::new(waker, futures, poll)
     }
 }

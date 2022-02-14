@@ -4,12 +4,12 @@ version = "0.1.0"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
 license = "MIT/Apache-2.0"
-readme = "README.md"
+readme = "../README.md"
 repository = "https://github.com/udoprog/selectme"
 homepage = "https://github.com/udoprog/selectme"
 documentation = "https://docs.rs/selectme"
 description = """
-A fast and fair select! macro for async Rust.
+A fast and fair select! macro for asynchronous Rust.
 """
 categories = ["asynchronous", "concurrency"]
 

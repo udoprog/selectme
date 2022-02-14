@@ -151,7 +151,7 @@ impl ToTokens for &[TokenTree] {
     }
 }
 
-struct FromFn<T>(T);
+pub struct FromFn<T>(T);
 
 impl<T> ToTokens for FromFn<T>
 where
@@ -163,9 +163,20 @@ where
 }
 
 /// Construct a [ToTokens] implementation from a callback function.
-pub fn from_fn<T>(f: T) -> impl ToTokens
+pub fn from_fn<T>(f: T) -> FromFn<T>
 where
     T: FnOnce(&mut TokenStream, Span),
 {
     FromFn(f)
 }
+
+impl<T> Clone for FromFn<T>
+where
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T> Copy for FromFn<T> where T: Copy {}

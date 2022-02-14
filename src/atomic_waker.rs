@@ -29,63 +29,6 @@ use core::task::Waker;
 ///
 /// For concurrent calls to `register` (should be avoided) the ordering is only
 /// guaranteed for the winning call.
-///
-/// # Examples
-///
-/// Here is a simple example providing a `Flag` that can be signalled manually
-/// when it is ready.
-///
-/// ```
-/// use futures::future::Future;
-/// use futures::task::{Context, Poll, AtomicWaker};
-/// use std::sync::Arc;
-/// use std::sync::atomic::AtomicBool;
-/// use std::sync::atomic::Ordering::Relaxed;
-/// use std::pin::Pin;
-///
-/// struct Inner {
-///     waker: AtomicWaker,
-///     set: AtomicBool,
-/// }
-///
-/// #[derive(Clone)]
-/// struct Flag(Arc<Inner>);
-///
-/// impl Flag {
-///     pub fn new() -> Self {
-///         Self(Arc::new(Inner {
-///             waker: AtomicWaker::new(),
-///             set: AtomicBool::new(false),
-///         }))
-///     }
-///
-///     pub fn signal(&self) {
-///         self.0.set.store(true, Relaxed);
-///         self.0.waker.wake();
-///     }
-/// }
-///
-/// impl Future for Flag {
-///     type Output = ();
-///
-///     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-///         // quick check to avoid registration if already done.
-///         if self.0.set.load(Relaxed) {
-///             return Poll::Ready(());
-///         }
-///
-///         self.0.waker.register(cx.waker());
-///
-///         // Need to check condition **after** `register` to avoid a race
-///         // condition that would result in lost notifications.
-///         if self.0.set.load(Relaxed) {
-///             Poll::Ready(())
-///         } else {
-///             Poll::Pending
-///         }
-///     }
-/// }
-/// ```
 pub struct AtomicWaker {
     state: AtomicUsize,
     waker: UnsafeCell<Option<Waker>>,
@@ -211,53 +154,20 @@ impl AtomicWaker {
     /// Registers the waker to be notified on calls to `wake`.
     ///
     /// The new task will take place of any previous tasks that were registered
-    /// by previous calls to `register`. Any calls to `wake` that happen after
-    /// a call to `register` (as defined by the memory ordering rules), will
+    /// by previous calls to `register`. Any calls to `wake` that happen after a
+    /// call to `register` (as defined by the memory ordering rules), will
     /// notify the `register` caller's task and deregister the waker from future
     /// notifications. Because of this, callers should ensure `register` gets
     /// invoked with a new `Waker` **each** time they require a wakeup.
     ///
     /// It is safe to call `register` with multiple other threads concurrently
-    /// calling `wake`. This will result in the `register` caller's current
-    /// task being notified once.
+    /// calling `wake`. This will result in the `register` caller's current task
+    /// being notified once.
     ///
     /// This function is safe to call concurrently, but this is generally a bad
     /// idea. Concurrent calls to `register` will attempt to register different
     /// tasks to be notified. One of the callers will win and have its task set,
     /// but there is no guarantee as to which caller will succeed.
-    ///
-    /// # Examples
-    ///
-    /// Here is how `register` is used when implementing a flag.
-    ///
-    /// ```
-    /// use futures::future::Future;
-    /// use futures::task::{Context, Poll, AtomicWaker};
-    /// use std::sync::atomic::AtomicBool;
-    /// use std::sync::atomic::Ordering::Relaxed;
-    /// use std::pin::Pin;
-    ///
-    /// struct Flag {
-    ///     waker: AtomicWaker,
-    ///     set: AtomicBool,
-    /// }
-    ///
-    /// impl Future for Flag {
-    ///     type Output = ();
-    ///
-    ///     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-    ///         // Register **before** checking `set` to avoid a race condition
-    ///         // that would result in lost notifications.
-    ///         self.waker.register(cx.waker());
-    ///
-    ///         if self.set.load(Relaxed) {
-    ///             Poll::Ready(())
-    ///         } else {
-    ///             Poll::Pending
-    ///         }
-    ///     }
-    /// }
-    /// ```
     pub fn register(&self, waker: &Waker) {
         match self
             .state

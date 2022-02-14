@@ -20,11 +20,6 @@ impl Set {
         Snapshot(self.0.swap(0, Ordering::SeqCst))
     }
 
-    /// Merge the current set with the given snapshot.
-    pub(crate) fn merge(&self, snapshot: Snapshot) {
-        self.0.fetch_or(snapshot.0, Ordering::SeqCst);
-    }
-
     /// Set the given bit in the set.
     pub(crate) fn set(&self, index: usize) {
         assert!(index < u64::BITS as usize);
@@ -36,7 +31,7 @@ impl Set {
 /// A snapshot of a set that can be iterated over.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub(crate) struct Snapshot(u64);
+pub struct Snapshot(u64);
 
 impl Snapshot {
     /// Test if the snapshot is empty.
@@ -44,15 +39,15 @@ impl Snapshot {
         self.0 == 0
     }
 
-    /// Retain the elements which exists in both sets.
+    /// Apply the given mask to the current snapshot.
     #[inline]
-    pub(crate) fn retain(&mut self, other: Self) {
-        self.0 &= other.0;
+    pub(crate) fn mask(self, mask: Self) -> Self {
+        Self(self.0 & mask.0)
     }
 
     /// Clear the given index.
     #[inline]
-    pub(crate) fn clear(&mut self, index: usize) {
+    pub fn clear(&mut self, index: usize) {
         self.0 &= !(1u64 << index as u64);
     }
 
@@ -61,18 +56,16 @@ impl Snapshot {
     pub(crate) fn merge(&mut self, other: Self) {
         self.0 |= other.0;
     }
-}
 
-impl Iterator for Snapshot {
-    type Item = u32;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    /// Unset the next index in the set and return it.
+    #[inline]
+    pub fn unset_next(&mut self) -> Option<usize> {
         if self.0 == 0 {
-            return None;
+            None
+        } else {
+            let index = self.0.trailing_zeros() as u64;
+            self.0 &= !(1u64 << index);
+            Some(index as usize)
         }
-
-        let index = self.0.trailing_zeros();
-        self.0 &= !(1u64 << index as u64);
-        Some(index)
     }
 }
