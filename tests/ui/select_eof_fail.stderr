@@ -1,0 +1,41 @@
+error: binding must be followed by a `=`
+ --> tests/ui/select_eof_fail.rs:6:25
+  |
+6 |     selectme::select! { _ };
+  |                         ^
+
+error: binding must be followed by a `=`
+ --> tests/ui/select_eof_fail.rs:7:25
+  |
+7 |     selectme::select! { binding };
+  |                         ^^^^^^^
+
+error: expected branch expression followed by `=>`
+ --> tests/ui/select_eof_fail.rs:8:5
+  |
+8 |     selectme::select! { binding = };
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `$crate::__support::select` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: expected branch expression followed by `=>`
+ --> tests/ui/select_eof_fail.rs:9:35
+  |
+9 |     selectme::select! { binding = expr };
+  |                                   ^^^^
+
+error: expected braced group or expression followed by `,`
+  --> tests/ui/select_eof_fail.rs:10:5
+   |
+10 |     selectme::select! { binding = expr => };
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the macro `$crate::__support::select` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: `select!` must not be empty, consider replacing with `future::pending::<()>().await` instead!
+  --> tests/ui/select_eof_fail.rs:15:5
+   |
+15 |     selectme::select! {}
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the macro `$crate::__support::select` (in Nightly builds, run with -Z macro-backtrace for more info)

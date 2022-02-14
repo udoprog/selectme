@@ -27,6 +27,8 @@ pub struct Parser {
     buf: VecDeque<TokenTree>,
     tokens: Vec<TokenTree>,
     errors: Vec<Error>,
+    // Re-usable string buffer.
+    string_buf: String,
 }
 
 impl Parser {
@@ -37,6 +39,7 @@ impl Parser {
             buf: VecDeque::new(),
             tokens: Vec::new(),
             errors: Vec::new(),
+            string_buf: String::new(),
         }
     }
 
@@ -46,7 +49,11 @@ impl Parser {
         let mut else_branch = None;
         let mut n = 0;
 
-        self.parse_until(COMMA);
+        if let Err(span) = self.parse_until_reserved(COMMA) {
+            self.errors.push(Error::new(span, "expected `,`"));
+            return Err(self.errors);
+        }
+
         let krate = 0..self.tokens.len();
 
         while self.nth(0).is_some() {
@@ -69,6 +76,11 @@ impl Parser {
             return Err(self.errors);
         }
 
+        if branches.is_empty() && else_branch.is_none() {
+            self.errors.push(Error::new(Span::call_site(), "`select!` must not be empty, consider replacing with `future::pending::<()>().await` instead!"));
+            return Err(self.errors);
+        }
+
         Ok(Output::new(self.tokens, krate, branches, else_branch))
     }
 
@@ -81,37 +93,27 @@ impl Parser {
         }
     }
 
-    /// Parse until the given punctuation.
-    fn parse_until(&mut self, expected: [char; 2]) -> bool {
-        loop {
-            match self.peek_punct() {
-                Some(p) if p.chars == expected => {
-                    self.step(p.len());
-                    return true;
-                }
-                _ => {}
-            }
-
-            if let Some(tt) = self.bump() {
-                self.tokens.push(tt);
-                continue;
-            }
-
-            return false;
-        }
-    }
-
     /// Parse a condition up until the `=>` token. Implements basic error
     /// recovery by winding to a group (or a comma).
     fn parse_condition(&mut self, ident: Ident) -> Option<(usize, usize)> {
         let start = self.tokens.len();
 
-        if self.parse_until(ROCKET) && start != self.tokens.len() {
+        if let Err(span) = self.parse_until_reserved(ROCKET) {
+            self.errors.push(Error::new(span, "expected `=>`"));
+            self.recover_to_group();
+            return None;
+        }
+
+        if start != self.tokens.len() {
             return Some((start, self.tokens.len()));
         }
 
-        let end = self.recover_failed_condition(ident.span())?;
-        Some((start, end))
+        self.errors.push(Error::new(
+            ident.span(),
+            "expected expression following `if`",
+        ));
+        self.recover_to_group();
+        return None;
     }
 
     fn parse_expr(
@@ -129,20 +131,27 @@ impl Parser {
                 Some(p @ Punct { chars: COMMA, .. }) => {
                     self.step(p.len());
 
-                    let (expr, len) = match self.bump() {
-                        Some(TokenTree::Ident(ident)) if ident.to_string() == "if" => {
-                            self.parse_condition(ident)?
+                    let span = match self.bump() {
+                        Some(TokenTree::Ident(ident)) if self.is_ident(&ident, "if") => {
+                            let (expr, len) = self.parse_condition(ident)?;
+                            return Some((start..expr, Some(expr..len)));
                         }
-                        _ => (self.tokens.len(), self.recover_failed_condition(p.span)?),
+                        Some(tt) => tt.span(),
+                        None => Span::call_site(),
                     };
 
-                    return Some((start..expr, Some(expr..len)));
+                    self.errors.push(Error::new(
+                        span,
+                        "expected `if` followed by branch condition",
+                    ));
+                    self.recover_to_group();
+                    return None;
                 }
                 _ => {}
             }
 
             match self.bump() {
-                Some(TokenTree::Ident(ident)) if ident.to_string() == "if" => {
+                Some(TokenTree::Ident(ident)) if self.is_ident(&ident, "if") => {
                     let (expr, len) = self.parse_condition(ident)?;
                     return Some((start..expr, Some(expr..len)));
                 }
@@ -167,59 +176,13 @@ impl Parser {
         }
     }
 
-    /// Consume until we've reached the end or encountered a braced block.
-    fn recover_failed_condition(&mut self, span: Span) -> Option<usize> {
-        loop {
-            match self.nth(0) {
-                Some(TokenTree::Group(..)) => {
-                    self.errors.push(Error::new(
-                        span,
-                        "expected condition expression followed by `=>`",
-                    ));
-                    return Some(self.tokens.len());
-                }
-                Some(..) => {
-                    if let Some(p @ Punct { chars: ROCKET, .. }) = self.peek_punct() {
-                        self.step(p.len());
-                        self.errors
-                            .push(Error::new(span, "expected condition expression"));
-                        return Some(self.tokens.len());
-                    }
-                }
-                None => {
-                    self.errors.push(Error::new(
-                        span,
-                        "expected condition expression (unexpected end)",
-                    ));
-                    return None;
-                }
-            }
-
+    /// Unwind until we find a group and return a boolean indicating if the group was found.
+    fn recover_to_group(&mut self) {
+        while !matches!(self.nth(0), Some(TokenTree::Group(..)) | None) {
             let _ = self.bump();
         }
-    }
 
-    /// Unwind until we find a group.
-    fn recover_to_group(&mut self, span: Span) -> Option<()> {
-        loop {
-            match self.nth(0) {
-                Some(TokenTree::Group(..)) => {
-                    self.errors
-                        .push(Error::new(span, "expected '=>' before branch"));
-                    return Some(());
-                }
-                Some(..) => {
-                    let _ = self.bump();
-                }
-                None => {
-                    self.errors.push(Error::new(
-                        span,
-                        "expected condition expression (unexpected end)",
-                    ));
-                    return None;
-                }
-            }
-        }
+        let _ = self.bump();
     }
 
     /// Try to parse the `else` keyword and indicate if it was successful.
@@ -233,43 +196,130 @@ impl Parser {
         }
     }
 
+    /// Test if the given ident matches the condition.
+    fn is_ident(&mut self, ident: &Ident, m: &str) -> bool {
+        use std::fmt::Write;
+
+        self.string_buf.clear();
+        let _ = write!(&mut self.string_buf, "{}", ident);
+        self.string_buf.as_str() == m
+    }
+
+    /// Test if the given punctuation is reserved.
+    fn is_reserved_punct(&mut self, p: &Punct) -> bool {
+        matches!(
+            p,
+            Punct {
+                chars: ROCKET | COMMA | EQ,
+                ..
+            }
+        )
+    }
+
+    /// Test if the given [TokenTree] represented a reserved identifier.
+    fn is_reserved_ident(&mut self, tt: &TokenTree) -> bool {
+        use std::fmt::Write;
+
+        if let TokenTree::Ident(ident) = tt {
+            self.string_buf.clear();
+            let _ = write!(&mut self.string_buf, "{}", ident);
+            return matches!(self.string_buf.as_str(), "if" | "else");
+        }
+
+        false
+    }
+
+    /// Parse until the given token or EOF.
+    fn parse_until_eof(&mut self, expected: [char; 2]) {
+        loop {
+            match self.peek_punct() {
+                Some(p) if p.chars == expected => {
+                    self.step(p.len());
+                    return;
+                }
+                _ => {}
+            }
+
+            if let Some(tt) = self.bump() {
+                self.tokens.push(tt);
+                continue;
+            }
+
+            return;
+        }
+    }
+
+    /// Parse until we've found an '=' or another punctuation which causes us to
+    /// error.
+    fn parse_until_reserved(&mut self, expected: [char; 2]) -> Result<(), Span> {
+        loop {
+            match self.peek_punct() {
+                Some(p) if p.chars == expected => {
+                    self.step(p.len());
+                    return Ok(());
+                }
+                Some(p) if self.is_reserved_punct(&p) => {
+                    self.step(p.len());
+                    return Err(p.span);
+                }
+                _ => {}
+            }
+
+            if let Some(tt) = self.bump() {
+                if self.is_reserved_ident(&tt) {
+                    return Err(tt.span());
+                }
+
+                self.tokens.push(tt);
+                continue;
+            }
+
+            return Err(self
+                .tokens
+                .last()
+                .map(|tt| tt.span())
+                .unwrap_or_else(Span::call_site));
+        }
+    }
+
+    /// Parse an else block.
+    fn parse_else(&mut self) -> Option<Else> {
+        let span = match self.peek_punct() {
+            Some(p @ Punct { chars: ROCKET, .. }) => {
+                self.step(p.len());
+                let block = self.parse_block()?;
+                return Some(Else { block });
+            }
+            Some(p) => p.span,
+            _ => match self.nth(0) {
+                Some(tt) => tt.span(),
+                None => Span::call_site(),
+            },
+        };
+
+        self.errors
+            .push(Error::new(span, "expected `else` followed by `=>`"));
+        self.recover_to_group();
+        None
+    }
+
     /// Parse the next block, if present.
     fn parse_segment(&mut self, index: usize) -> Option<Segment> {
         let start = self.tokens.len();
 
         if self.try_parse_else() {
-            match self.peek_punct() {
-                Some(p @ Punct { chars: ROCKET, .. }) => {
-                    self.step(p.len());
-                }
-                Some(p) => {
-                    self.recover_to_group(p.span)?;
-                }
-                _ => {
-                    let span = match self.nth(0) {
-                        Some(tt) => tt.span(),
-                        None => Span::call_site(),
-                    };
-
-                    self.recover_to_group(span)?;
-                }
-            }
-
-            let block = self.parse_block()?;
-            return Some(Segment::Else(Else { block }));
+            return Some(Segment::Else(self.parse_else()?));
         }
 
-        let binding = if self.parse_until(EQ) {
-            start..self.tokens.len()
-        } else {
-            let span = self
-                .tokens
-                .last()
-                .map(|tt| tt.span())
-                .unwrap_or_else(Span::call_site);
-            self.errors
-                .push(Error::new(span, "expected binding followed by `=`"));
-            return None;
+        let binding = match self.parse_until_reserved(EQ) {
+            Ok(()) => start..self.tokens.len(),
+            Err(span) => {
+                self.errors
+                    .push(Error::new(span, "binding must be followed by a `=`"));
+
+                self.recover_to_group();
+                return None;
+            }
         };
 
         let (expr, condition) = self.parse_expr(binding.end)?;
@@ -333,20 +383,16 @@ impl Parser {
                 self.tokens.extend(tt);
                 Some(Block::Group(start..self.tokens.len()))
             }
-            Some(tt) => {
-                let span = tt.span();
-
-                if !self.parse_until(COMMA) {
-                    self.errors
-                        .push(Error::new(span, "expected expression followed by `,`"));
-                    return None;
-                }
-
+            Some(..) => {
+                // Either parse until a comma or an EOF.
+                self.parse_until_eof(COMMA);
                 Some(Block::Expr(start..self.tokens.len()))
             }
             None => {
-                self.errors
-                    .push(Error::new(Span::call_site(), "expected braced group"));
+                self.errors.push(Error::new(
+                    Span::call_site(),
+                    "expected braced group or expression followed by `,`",
+                ));
                 None
             }
         }

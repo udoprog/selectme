@@ -21,8 +21,8 @@ impl PollerWaker {
     }
 }
 
-static POLLER_WAKER_VTABLE: &RawWakerVTable = &RawWakerVTable::new(
-    |this| RawWaker::new(this, POLLER_WAKER_VTABLE),
+static VTABLE: &RawWakerVTable = &RawWakerVTable::new(
+    |this| RawWaker::new(this, VTABLE),
     |this| unsafe { (*(this as *const PollerWaker)).wake() },
     |this| unsafe { (*(this as *const PollerWaker)).wake() },
     |_| {},
@@ -35,7 +35,7 @@ where
     T: FnOnce(&mut Context<'_>) -> Poll<O>,
 {
     unsafe {
-        let waker = RawWaker::new(waker as *const _ as *const (), POLLER_WAKER_VTABLE);
+        let waker = RawWaker::new(waker as *const _ as *const (), VTABLE);
         let waker = Waker::from_raw(waker);
         let mut cx = Context::from_waker(&waker);
         f(&mut cx)

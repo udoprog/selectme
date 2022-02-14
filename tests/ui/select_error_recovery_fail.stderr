@@ -1,0 +1,41 @@
+error: binding must be followed by a `=`
+ --> tests/ui/select_error_recovery_fail.rs:8:17
+  |
+8 |         binding => {}
+  |                 ^^
+
+error: binding must be followed by a `=`
+  --> tests/ui/select_error_recovery_fail.rs:12:21
+   |
+12 |         binding0 {} if
+   |                     ^^
+
+error: binding must be followed by a `=`
+  --> tests/ui/select_error_recovery_fail.rs:14:18
+   |
+14 |         binding2 {}
+   |                  ^^
+
+error: expected `=>`
+  --> tests/ui/select_error_recovery_fail.rs:19:18
+   |
+19 |         binding1 = expr => {}
+   |                  ^
+
+error: expected branch expression followed by `=>`
+  --> tests/ui/select_error_recovery_fail.rs:20:20
+   |
+20 |         binding2 = {}
+   |                    ^^
+
+error: expected `=>`
+  --> tests/ui/select_error_recovery_fail.rs:25:18
+   |
+25 |         binding1 = expr1 => {}
+   |                  ^
+
+error: expected branch expression followed by `=>`
+  --> tests/ui/select_error_recovery_fail.rs:26:26
+   |
+26 |         binding2 = expr2 {}
+   |                          ^^

@@ -223,7 +223,8 @@
 /// }
 /// ```
 ///
-/// Using the `biased;` mode to control polling order.
+/// Showing how `select!` has a deterministic order by default. This is known as
+/// the [`biased` option in Tokio].
 ///
 /// ```
 /// #[tokio::main]
@@ -329,6 +330,7 @@
 /// ```
 ///
 /// [unicycle]: https://docs.rs/unicycle
+/// [`biased` option in Tokio]: https://docs.rs/tokio/latest/tokio/macro.select.html#fairness
 #[macro_export]
 macro_rules! select {
     ($($tt:tt)*) => {{
