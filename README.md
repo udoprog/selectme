@@ -14,7 +14,7 @@ See [select!] for documentation.
 Add the following to your `Cargo.toml`:
 
 ```toml
-selectme = "0.2.2"
+selectme = "0.2.3"
 ```
 
 ### Examples
