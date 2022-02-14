@@ -9,6 +9,41 @@ A fast and fair select! implementation for asynchronous programming.
 
 See [select!] for documentation.
 
+### Usage
+
+Add the following to your `Cargo.toml`:
+
+```toml
+selectme = "0.2.1"
+```
+
+### Examples
+
+The following is a simple example showcasing two branches being polled
+concurrently. For more documentation see [select!].
+
+```rust
+async fn do_stuff_async() {
+    // async work
+}
+
+async fn more_async_work() {
+    // more here
+}
+
+#[tokio::main]
+async fn main() {
+    selectme::select! {
+        _ = do_stuff_async() => {
+            println!("do_stuff_async() completed first")
+        }
+        _ = more_async_work() => {
+            println!("more_async_work() completed first")
+        }
+    };
+}
+```
+
 [select!]: https://docs.rs/selectme/latest/selectme/macro.select.html
 
 License: MIT/Apache-2.0

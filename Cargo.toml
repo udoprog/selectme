@@ -1,6 +1,6 @@
 [package]
 name = "selectme"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
 license = "MIT/Apache-2.0"
@@ -18,7 +18,7 @@ default = ["std"]
 std = []
 
 [dependencies]
-selectme-macros = { path = "selectme-macros", version = "0.2.0" }
+selectme-macros = { path = "selectme-macros", version = "0.2.1" }
 
 [dev-dependencies]
 tokio = { version = "1.16.1", features = ["macros", "time", "rt", "rt-multi-thread"] }

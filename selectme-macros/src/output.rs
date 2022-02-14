@@ -116,7 +116,7 @@ impl Output {
             }
         });
 
-        ("let", "mut", "__fut", '=', parens(init), ';')
+        ("let", "mut", "__fut", '=', parens(init))
     }
 
     fn matches(&self) -> impl ToTokens + '_ {
@@ -329,7 +329,6 @@ impl Output {
         stream.tokens(span, self.private_mod());
 
         let reset_base = self.conditions(stream, span);
-        stream.tokens(span, self.futures());
         stream.tokens(span, self.reset(reset_base));
 
         let output_body = from_fn(|stream, span| {
@@ -348,6 +347,8 @@ impl Output {
 
             stream.tokens(span, ("_", tok::ROCKET, braced(panic_)));
         });
+
+        let futures_decl = (self.futures(), ';');
 
         let select_decl = (
             ("let", "mut", "__select"),
@@ -368,7 +369,7 @@ impl Output {
             span,
             (
                 "match",
-                braced((select_decl, loop_decl)),
+                braced((futures_decl, select_decl, loop_decl)),
                 braced(output_body),
             ),
         );
