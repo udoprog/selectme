@@ -1,4 +1,4 @@
-use std::iter::once;
+use core::iter::once;
 
 use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenTree};
 

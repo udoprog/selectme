@@ -1,4 +1,6 @@
+mod entry;
 mod error;
+mod parsing;
 mod select;
 mod to_tokens;
 mod tok;
@@ -38,6 +40,48 @@ pub fn inline(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         Ok(output) => {
             output
                 .expand_inline()
+                .to_tokens(&mut stream, Span::mixed_site());
+        }
+        Err(errors) => {
+            format_errors(errors).to_tokens(&mut stream, Span::mixed_site());
+        }
+    }
+
+    stream.into_token_stream()
+}
+
+#[proc_macro_attribute]
+#[cfg(feature = "tokio-entry")]
+pub fn main(args: proc_macro::TokenStream, _: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let p = entry::Parser::new(args);
+
+    let mut stream = TokenStream::default();
+
+    match p.parse() {
+        Ok(output) => {
+            output
+                .expand_main()
+                .to_tokens(&mut stream, Span::mixed_site());
+        }
+        Err(errors) => {
+            format_errors(errors).to_tokens(&mut stream, Span::mixed_site());
+        }
+    }
+
+    stream.into_token_stream()
+}
+
+#[proc_macro_attribute]
+#[cfg(feature = "tokio-entry")]
+pub fn test(args: proc_macro::TokenStream, _: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let p = entry::Parser::new(args);
+
+    let mut stream = TokenStream::default();
+
+    match p.parse() {
+        Ok(output) => {
+            output
+                .expand_test()
                 .to_tokens(&mut stream, Span::mixed_site());
         }
         Err(errors) => {
