@@ -69,25 +69,7 @@ impl Output {
 
     /// Private module declaration.
     fn private_mod(&self) -> impl ToTokens + '_ {
-        let poller = (self.support(), "PollerWaker");
-        let static_ = (self.support(), "StaticWaker");
-
-        let private_mod = braced(from_fn(move |s| {
-            s.write((
-                ("pub", "static", "WAKER", ':', static_, '='),
-                (static_, S, "new", parens(()), ';'),
-            ));
-
-            for b in &self.branches {
-                s.write((
-                    ("pub", "static", b.waker.as_ref(), ':', poller, '='),
-                    (poller, S, "new", parens(('&', "WAKER", ',', b.index)), ';'),
-                ));
-            }
-
-            s.write(self.out_enum());
-        }));
-
+        let private_mod = braced(self.out_enum());
         ("mod", PRIVATE, private_mod)
     }
 
@@ -156,7 +138,7 @@ impl Output {
             }
 
             if let Some(e) = &self.else_branch {
-                let body = ("break", self.else_branch(mode, e), ';');
+                let body = ("return", tok::Poll::Ready(self.else_branch(mode, e)), ';');
                 s.write(((self.support(), "DISABLED"), tok::ROCKET, braced(body)));
             }
 
@@ -188,7 +170,7 @@ impl Output {
                         '=',
                         '&',
                         "out",
-                        braced(("break", body, ';')),
+                        braced(("return", tok::Poll::Ready(body), ';')),
                     ),
                 ));
             }
@@ -200,7 +182,7 @@ impl Output {
                     pat,
                     '=',
                     "out",
-                    braced(("break", self.block(&b.block), ';')),
+                    braced(("return", tok::Poll::Ready(self.block(&b.block)), ';')),
                 ));
             }
         })
@@ -235,6 +217,7 @@ impl Output {
         })
     }
 
+    /// Expand the poll expression.
     fn poll_body<'a>(
         &'a self,
         b: &'a Branch,
@@ -244,18 +227,12 @@ impl Output {
         let future_poll = ("Future", S, "poll", parens(("__fut", ',', "cx")));
 
         (
-            ("if", "let", tok::Poll::Ready("out")),
-            '=',
-            (
-                (self.support(), "poll_by_ref"),
-                parens((
-                    ('&', PRIVATE, S, b.waker.as_ref(), ','),
-                    (tok::piped("cx"), future_poll),
-                )),
-            ),
+            ("if", "let", tok::Poll::Ready("out"), '='),
+            future_poll,
             braced((
                 unset.map(|var| (var, '.', "set", parens(tok::Option::<()>::None), ';')),
-                ("__select", '.', "clear", parens(b.index), ';'),
+                // Unset the current branch in the mask, since it completed.
+                ("mask", '.', "clear", parens(b.index), ';'),
                 self.match_branch(b, mode),
             )),
         )
@@ -319,6 +296,24 @@ impl Output {
         )
     }
 
+    /// Setup the poll declaration.
+    fn poll_decl(&self, reset_base: usize, mode: Mode) -> impl ToTokens + '_ {
+        let match_body = ("match", "index", braced(self.matches(mode)));
+        let fallback = ("Poll", S, "Pending");
+
+        let poll_body = (
+            tok::piped(("cx", ',', "mask", ',', "index")),
+            braced((match_body, fallback)),
+        );
+
+        (
+            self.support(),
+            "poll_fn",
+            parens((self.mask_expr(reset_base), ',', poll_body)),
+            ('.', "await"),
+        )
+    }
+
     /// Expand a select which is awaited immediately.
     pub fn expand(self) -> impl ToTokens {
         braced(from_fn(move |s| {
@@ -346,26 +341,9 @@ impl Output {
 
             let futures_decl = (self.futures(), ';');
 
-            let select_decl = (
-                ("let", "mut", "__select", '=', "unsafe"),
-                braced((
-                    (self.support(), "poller"),
-                    parens((('&', PRIVATE, S, "WAKER"), ',', self.mask_expr(reset_base))),
-                )),
-                ';',
-            );
-
-            let loop_decl = (
-                "loop",
-                braced((
-                    ("match", "__select", '.', "next", parens(()), '.', "await"),
-                    braced(self.matches(Mode::Default)),
-                )),
-            );
-
             s.write((
                 "match",
-                braced((futures_decl, select_decl, loop_decl)),
+                braced((futures_decl, self.poll_decl(reset_base, Mode::Default))),
                 braced(output_body),
             ));
         }))
@@ -380,24 +358,10 @@ impl Output {
             let reset_base = self.conditions(s);
             let futures_decl = (self.futures(), ';');
 
-            let select_decl = (
-                ("let", "mut", "__select", '=', "unsafe"),
-                braced((
-                    (self.support(), "poller"),
-                    parens((('&', PRIVATE, S, "WAKER"), ',', self.mask_expr(reset_base))),
-                )),
-                ';',
-            );
-
-            let loop_decl = (
-                "loop",
-                braced((
-                    ("match", "__select", '.', "next", parens(()), '.', "await"),
-                    braced(self.matches(Mode::Inline)),
-                )),
-            );
-
-            s.write(braced((futures_decl, select_decl, loop_decl)));
+            s.write(braced((
+                futures_decl,
+                self.poll_decl(reset_base, Mode::Inline),
+            )));
         }))
     }
 }

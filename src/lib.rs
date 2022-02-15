@@ -57,11 +57,8 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-mod atomic_waker;
-mod poller;
-mod poller_waker;
+mod poll_fn;
 mod set;
-mod static_waker;
 
 #[macro_use]
 mod macros;
@@ -69,33 +66,23 @@ mod macros;
 /// Hidden support module used by macros.
 #[doc(hidden)]
 pub mod __support {
-    pub use crate::poller::DISABLED;
-    pub use crate::poller_waker::{poll_by_ref, PollerWaker};
-    pub use crate::static_waker::StaticWaker;
+    pub use crate::poll_fn::DISABLED;
     pub use core::future::Future;
     pub use core::pin::Pin;
     pub use core::task::Poll;
     pub use selectme_macros::{inline, select};
 
-    use crate::poller::Poller;
+    use core::task::Context;
 
-    /// Construct a new polling context from a custom function.
+    use crate::poll_fn::PollFn;
+    use crate::set::Set;
+
+    /// Perform a poll with the initial mask.
     #[inline]
-    pub unsafe fn poller(waker: &'static StaticWaker, mask: u64) -> Poller {
-        use crate::set::Snapshot;
-
-        // We look at the global snapshot as an initial snapshot to use as
-        // heuristic for what to poll next.
-        let initial = waker.set.take();
-
-        let (snapshot, fallback) = if !initial.is_empty() {
-            let fallback = Snapshot::new(mask ^ *initial);
-            (initial, fallback)
-        } else {
-            (Snapshot::new(mask), Snapshot::empty())
-        };
-
-        let mask = Snapshot::new(mask);
-        Poller::new(waker, mask, snapshot, fallback)
+    pub fn poll_fn<T, O>(mask: u64, poll: T) -> impl Future<Output = O>
+    where
+        T: FnMut(&mut Context<'_>, &mut Set, u32) -> Poll<O>,
+    {
+        PollFn::new(Set::new(mask), poll)
     }
 }

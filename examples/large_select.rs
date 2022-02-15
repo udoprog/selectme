@@ -1,5 +1,3 @@
-#![feature(maybe_uninit_uninit_array, maybe_uninit_array_assume_init)]
-
 use std::mem::MaybeUninit;
 use std::thread;
 use std::time::Instant;
@@ -135,18 +133,22 @@ struct Scenario {
 impl Scenario {
     /// Setup the current scenario.
     fn build(&self) -> ([oneshot::Receiver<()>; COUNT], [oneshot::Sender<()>; COUNT]) {
-        let mut polls = MaybeUninit::uninit_array::<COUNT>();
-        let mut triggers = MaybeUninit::uninit_array::<COUNT>();
-
-        for (p, index) in polls.iter_mut().zip(self.timings.iter()) {
-            let (tx, rx) = oneshot::channel::<()>();
-            p.write(rx);
-            triggers[*index].write(tx);
+        unsafe fn array_assume_init<T, const N: usize>(array: [MaybeUninit<T>; N]) -> [T; N] {
+            (&array as *const _ as *const [T; N]).read()
         }
 
         unsafe {
-            let polls = MaybeUninit::array_assume_init(polls);
-            let triggers = MaybeUninit::array_assume_init(triggers);
+            let mut polls = MaybeUninit::<[MaybeUninit<_>; COUNT]>::uninit().assume_init();
+            let mut triggers = MaybeUninit::<[MaybeUninit<_>; COUNT]>::uninit().assume_init();
+
+            for (p, index) in polls.iter_mut().zip(self.timings.iter()) {
+                let (tx, rx) = oneshot::channel::<()>();
+                p.write(rx);
+                triggers[*index].write(tx);
+            }
+
+            let polls = array_assume_init(polls);
+            let triggers = array_assume_init(triggers);
             (polls, triggers)
         }
     }

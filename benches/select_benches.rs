@@ -166,7 +166,7 @@ fn selectme_select(b: &mut Bencher) {
         runtime.block_on(async {
             for scenario in &scenarios {
                 let (polls, triggers) = scenario.build();
-                let poller = test!(selectme::inline, polls);
+                let poller = test!(selectme::select, polls);
 
                 let t = thread::spawn(move || {
                     for t in triggers {
