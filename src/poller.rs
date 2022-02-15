@@ -22,6 +22,8 @@ pub struct Poller {
     waker: &'static StaticWaker,
     /// A snapshot of the bitset for the current things that needs polling.
     snapshot: Snapshot,
+    /// A set to poll that was derived from heuristics.
+    fallback: Snapshot,
 }
 
 impl Poller {
@@ -29,12 +31,18 @@ impl Poller {
     ///
     /// This poller instance must be the only one with exclusive access to the
     /// provided [StaticWaker].
-    pub(crate) unsafe fn new(waker: &'static StaticWaker, snapshot: Snapshot) -> Self {
+    pub(crate) unsafe fn new(
+        waker: &'static StaticWaker,
+        mask: Snapshot,
+        snapshot: Snapshot,
+        fallback: Snapshot,
+    ) -> Self {
         Self {
-            mask: snapshot,
+            mask,
             merge: true,
             waker,
             snapshot,
+            fallback,
         }
     }
 
@@ -61,6 +69,11 @@ impl Poller {
     /// Merge and return a boolean indicating if we should yield as pending or
     /// not.
     fn merge(&mut self, cx: &mut Context<'_>) -> bool {
+        if self.snapshot.is_empty() && !self.fallback.is_empty() {
+            self.snapshot = self.fallback.take().mask(self.mask);
+            return false;
+        }
+
         // NB: Oppurtunistically take things which have been marked without
         // paying the cost of registering a new waker.
         self.merge_from_shared();
@@ -115,6 +128,15 @@ impl Future for Poller {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.inner_poll(cx)
+    }
+}
+
+impl Drop for Poller {
+    fn drop(&mut self) {
+        // Merge the current snapshot into the global set because it is a good
+        // characterization of what can be used next time as heuristics for the
+        // poller.
+        self.waker.set.merge(self.snapshot);
     }
 }
 

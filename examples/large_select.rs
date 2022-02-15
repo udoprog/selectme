@@ -2,7 +2,7 @@
 
 use std::mem::MaybeUninit;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -10,7 +10,7 @@ use rand::{Rng, SeedableRng};
 use tokio::sync::oneshot;
 
 const COUNT: usize = 63;
-const ITERATIONS: usize = 1;
+const ITERATIONS: usize = 100;
 
 macro_rules! test {
     ($path:path, $polls:expr) => {
@@ -112,11 +112,10 @@ pub fn main() {
     runtime.block_on(async {
         for scenario in &scenarios {
             let (polls, triggers) = scenario.build();
-            let poller = test!(selectme::inline, polls);
+            let poller = test!(tokio::select, polls);
 
             let t = thread::spawn(move || {
                 for t in triggers {
-                    thread::sleep(Duration::from_millis(10));
                     let _ = t.send(());
                 }
             });

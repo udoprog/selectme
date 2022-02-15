@@ -82,8 +82,20 @@ pub mod __support {
     /// Construct a new polling context from a custom function.
     #[inline]
     pub unsafe fn poller(waker: &'static StaticWaker, mask: u64) -> Poller {
-        waker.set.reset(0);
-        let snapshot = crate::set::Snapshot::new(mask);
-        Poller::new(waker, snapshot)
+        use crate::set::Snapshot;
+
+        // We look at the global snapshot as an initial snapshot to use as
+        // heuristic for what to poll next.
+        let initial = waker.set.take();
+
+        let (snapshot, fallback) = if !initial.is_empty() {
+            let fallback = Snapshot::new(mask ^ *initial);
+            (initial, fallback)
+        } else {
+            (Snapshot::new(mask), Snapshot::empty())
+        };
+
+        let mask = Snapshot::new(mask);
+        Poller::new(waker, mask, snapshot, fallback)
     }
 }

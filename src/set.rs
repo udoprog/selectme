@@ -1,4 +1,5 @@
 use core::sync::atomic::{AtomicU64, Ordering};
+use std::ops::Deref;
 
 /// An atomic set indicating wakeup interest.
 #[repr(transparent)]
@@ -8,11 +9,6 @@ impl Set {
     /// Construct a new empty set.
     pub const fn empty() -> Self {
         Self(AtomicU64::new(0))
-    }
-
-    /// Fill the set marking all branches that should be initially polled.
-    pub(crate) fn reset(&self, snapshot: u64) {
-        self.0.store(snapshot, Ordering::SeqCst);
     }
 
     /// Take the current set and replace with an empty set returning the old set.
@@ -26,6 +22,11 @@ impl Set {
         let bit = 1u64 << index as u64;
         self.0.fetch_or(bit, Ordering::SeqCst);
     }
+
+    /// Merge the global set with a snapshot.
+    pub(crate) fn merge(&self, snapshot: Snapshot) {
+        self.0.fetch_or(snapshot.0, Ordering::SeqCst);
+    }
 }
 
 /// A snapshot of a set that can be iterated over.
@@ -35,8 +36,18 @@ pub struct Snapshot(u64);
 
 impl Snapshot {
     /// Construct a new snapshot with the specified `value`.
-    pub(crate) fn new(value: u64) -> Self {
+    pub(crate) const fn new(value: u64) -> Self {
         Self(value)
+    }
+
+    /// Construct an empty snapshot.
+    pub(crate) const fn empty() -> Self {
+        Self(0)
+    }
+
+    /// Take the current snapshot.
+    pub(crate) fn take(&mut self) -> Self {
+        Self(std::mem::take(&mut self.0))
     }
 
     /// Test if the snapshot is empty.
@@ -72,5 +83,13 @@ impl Snapshot {
             self.0 &= !(1u64 << index);
             Some(index as usize)
         }
+    }
+}
+
+impl Deref for Snapshot {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
