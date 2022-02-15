@@ -5,7 +5,7 @@
 //!
 //! A fast and fair select! implementation for asynchronous programming.
 //!
-//! See [select!] for documentation.
+//! See the [select!] or [inline!] macros for documentation.
 //!
 //! ## Usage
 //!
@@ -43,6 +43,7 @@
 //! ```
 //!
 //! [select!]: https://docs.rs/selectme/latest/selectme/macro.select.html
+//! [inline!]: https://docs.rs/selectme/latest/selectme/macro.inline.html
 
 // This project contains code and documentation licensed under the MIT license
 // from the futures-rs project.
@@ -55,9 +56,12 @@
 // See: https://github.com/tokio-rs/tokio/blob/986b88b/LICENSE
 
 #![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-mod poll_fn;
+mod select;
+pub use crate::select::Select;
+
 mod set;
 
 #[macro_use]
@@ -66,7 +70,7 @@ mod macros;
 /// Hidden support module used by macros.
 #[doc(hidden)]
 pub mod __support {
-    pub use crate::poll_fn::DISABLED;
+    pub use crate::select::DISABLED;
     pub use core::future::Future;
     pub use core::pin::Pin;
     pub use core::task::Poll;
@@ -74,15 +78,15 @@ pub mod __support {
 
     use core::task::Context;
 
-    use crate::poll_fn::PollFn;
+    use crate::select::Select;
     use crate::set::Set;
 
     /// Perform a poll with the initial mask.
     #[inline]
-    pub fn poll_fn<T, O>(mask: u64, poll: T) -> impl Future<Output = O>
+    pub fn select<T, S, O>(mask: u64, state: S, poll: T) -> Select<T, S>
     where
-        T: FnMut(&mut Context<'_>, &mut Set, u32) -> Poll<O>,
+        T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
     {
-        PollFn::new(Set::new(mask), poll)
+        Select::new(Set::new(mask), state, poll)
     }
 }

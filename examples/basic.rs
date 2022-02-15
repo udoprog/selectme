@@ -4,28 +4,32 @@ use tokio::time;
 
 #[tokio::main]
 pub async fn main() {
-    let s1 = time::sleep(Duration::from_secs(2));
+    let s1 = time::sleep(Duration::from_millis(100));
     tokio::pin!(s1);
-
     let mut s1_done = false;
 
-    let mut s2 = time::interval(Duration::from_secs(5));
+    let s2 = time::sleep(Duration::from_millis(200));
+    tokio::pin!(s2);
     let mut s2_done = false;
 
     loop {
         let output = selectme::select! {
-            () = &mut s1 if !s1_done => {
+            () = &mut s1, if !s1_done => {
                 s1_done = true;
-                None
+                Some(1)
             }
-            mut instant = s2.tick() if !s2_done => {
+            _ = &mut s2, if !s2_done => {
                 s2_done = true;
-                instant = tokio::time::Instant::now();
-                Some(instant)
+                Some(2)
             }
             else => {
                 None
             }
+        };
+
+        let output = match output {
+            Some(output) => output,
+            None => break,
         };
 
         dbg!(output);

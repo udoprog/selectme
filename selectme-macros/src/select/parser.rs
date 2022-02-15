@@ -337,7 +337,6 @@ impl Parser {
             expr,
             block,
             waker: format!("WAKER{}", index).into(),
-            pin: format!("__fut{}", index).into(),
             generic: format!("T{}", index).into(),
             variant: format!("Branch{}", index).into(),
             condition,
@@ -420,8 +419,6 @@ pub struct Branch {
     pub block: Block,
     /// The name of the child waker for this block.
     pub waker: Box<str>,
-    /// The name of the pin variable.
-    pub pin: Box<str>,
     /// The name of the generic used by the branch.
     pub generic: Box<str>,
     /// The name of the enum variant use by this branch.

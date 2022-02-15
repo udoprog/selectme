@@ -22,10 +22,10 @@ async fn poller_test() {
 
             let initial = if !s1_done { 1 } else { 0 } + if !s2_done { 2 } else { 0 };
 
-            ::selectme::__support::poll_fn(initial, |cx, mask, index| {
+            ::selectme::__support::select(initial, __fut, |cx, state, mask, index| {
                 match index {
                     0 => {
-                        let __fut0 = unsafe { Pin::new_unchecked(&mut __fut.0) };
+                        let __fut0 = unsafe { Pin::map_unchecked_mut(state, |f| &mut f.0) };
 
                         if let Some(__fut) = Option::as_pin_mut(__fut0) {
                             if let Poll::Ready(out) = Future::poll(__fut, cx) {
@@ -40,7 +40,7 @@ async fn poller_test() {
                         }
                     }
                     1 => {
-                        let mut __fut1 = unsafe { Pin::new_unchecked(&mut __fut.1) };
+                        let mut __fut1 = unsafe { Pin::map_unchecked_mut(state, |f| &mut f.1) };
 
                         if let Some(__fut) = Option::as_pin_mut(__fut1.as_mut()) {
                             if let Poll::Ready(out) = Future::poll(__fut, cx) {

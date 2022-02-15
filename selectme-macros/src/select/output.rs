@@ -73,8 +73,8 @@ impl Output {
         ("mod", PRIVATE, private_mod)
     }
 
-    fn futures(&self) -> impl ToTokens + '_ {
-        let init = from_fn(|s| {
+    fn state(&self) -> impl ToTokens + '_ {
+        parens(from_fn(|s| {
             for b in &self.branches {
                 if let Some(c) = &b.condition {
                     s.write(tok::if_else(
@@ -88,9 +88,7 @@ impl Output {
 
                 s.write(',');
             }
-        });
-
-        ("let", "mut", "__fut", '=', parens(init))
+        }))
     }
 
     /// Render the else branch.
@@ -113,19 +111,19 @@ impl Output {
                 let fut = (
                     "unsafe",
                     braced((
-                        ("Pin", S, "new_unchecked"),
-                        parens(('&', "mut", "__fut", '.', b.index)),
+                        ("Pin", S, "map_unchecked_mut"),
+                        parens(("state", ',', tok::piped("f"), '&', "mut", "f", '.', b.index)),
                     )),
                 );
 
                 if b.condition.is_some() {
-                    let assign = ("let", "mut", b.pin.as_ref(), '=', fut, ';');
-                    let poll = self.poll_body(b, Some(b.pin.as_ref()), mode);
+                    let assign = ("let", "mut", "__maybe_fut", '=', fut, ';');
+                    let poll = self.poll_body(b, Some("__maybe_fut"), mode);
 
                     let poll = (
                         ("if", "let", tok::option_some("__fut"), '='),
                         ("Option", S, "as_pin_mut"),
-                        parens(tok::pin_as_mut(b.pin.as_ref())),
+                        parens(tok::pin_as_mut("__maybe_fut")),
                         braced(poll),
                     );
 
@@ -302,15 +300,20 @@ impl Output {
         let fallback = ("Poll", S, "Pending");
 
         let poll_body = (
-            tok::piped(("cx", ',', "mask", ',', "index")),
+            tok::piped(("cx", ',', "state", ',', "mask", ',', "index")),
             braced((match_body, fallback)),
         );
 
         (
             self.support(),
-            "poll_fn",
-            parens((self.mask_expr(reset_base), ',', poll_body)),
-            ('.', "await"),
+            "select",
+            parens((
+                self.mask_expr(reset_base),
+                ',',
+                self.state(),
+                ',',
+                poll_body,
+            )),
         )
     }
 
@@ -339,11 +342,9 @@ impl Output {
                 s.write(("_", tok::ROCKET, braced(panic_)));
             });
 
-            let futures_decl = (self.futures(), ';');
-
             s.write((
                 "match",
-                braced((futures_decl, self.poll_decl(reset_base, Mode::Default))),
+                (self.poll_decl(reset_base, Mode::Default), '.', "await"),
                 braced(output_body),
             ));
         }))
@@ -353,15 +354,8 @@ impl Output {
     pub fn expand_inline(self) -> impl ToTokens {
         braced(from_fn(move |s| {
             s.write(self.imports());
-            s.write(self.private_mod());
-
             let reset_base = self.conditions(s);
-            let futures_decl = (self.futures(), ';');
-
-            s.write(braced((
-                futures_decl,
-                self.poll_decl(reset_base, Mode::Inline),
-            )));
+            s.write(self.poll_decl(reset_base, Mode::Inline));
         }))
     }
 }

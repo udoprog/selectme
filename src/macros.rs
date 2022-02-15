@@ -79,17 +79,16 @@
 ///     // more here
 /// }
 ///
-/// #[tokio::main]
-/// async fn main() {
-///     selectme::select! {
-///         _ = do_stuff_async() => {
-///             println!("do_stuff_async() completed first")
-///         }
-///         _ = more_async_work() => {
-///             println!("more_async_work() completed first")
-///         }
-///     };
-/// }
+/// # #[tokio::main] async fn main() {
+/// selectme::select! {
+///     _ = do_stuff_async() => {
+///         println!("do_stuff_async() completed first")
+///     }
+///     _ = more_async_work() => {
+///         println!("more_async_work() completed first")
+///     }
+/// };
+/// # }
 /// ```
 ///
 /// Basic stream selecting.
@@ -97,18 +96,17 @@
 /// ```
 /// use tokio_stream::{self as stream, StreamExt};
 ///
-/// #[tokio::main]
-/// async fn main() {
-///     let mut stream1 = stream::iter(vec![1, 2, 3]);
-///     let mut stream2 = stream::iter(vec![4, 5, 6]);
+/// # #[tokio::main] async fn main() {
+/// let mut stream1 = stream::iter(vec![1, 2, 3]);
+/// let mut stream2 = stream::iter(vec![4, 5, 6]);
 ///
-///     let next = selectme::select! {
-///         Some(v) = stream1.next() => v,
-///         Some(v) = stream2.next() => v,
-///     };
+/// let next = selectme::select! {
+///     Some(v) = stream1.next() => v,
+///     Some(v) = stream2.next() => v,
+/// };
 ///
-///     assert!(next == 1 || next == 4);
-/// }
+/// assert!(next == 1 || next == 4);
+/// # }
 /// ```
 ///
 /// Collect the contents of two streams. In this example, we rely on pattern
@@ -118,24 +116,23 @@
 /// ```
 /// use tokio_stream::{self as stream, StreamExt};
 ///
-/// #[tokio::main]
-/// async fn main() {
-///     let mut stream1 = stream::iter(vec![1, 2, 3]);
-///     let mut stream2 = stream::iter(vec![4, 5, 6]);
+/// # #[tokio::main] async fn main() {
+/// let mut stream1 = stream::iter(vec![1, 2, 3]);
+/// let mut stream2 = stream::iter(vec![4, 5, 6]);
 ///
-///     let mut values = vec![];
+/// let mut values = vec![];
 ///
-///     loop {
-///         selectme::select! {
-///             Some(v) = stream1.next() => values.push(v),
-///             Some(v) = stream2.next() => values.push(v),
-///             else => break,
-///         }
+/// loop {
+///     selectme::select! {
+///         Some(v) = stream1.next() => values.push(v),
+///         Some(v) = stream2.next() => values.push(v),
+///         else => break,
 ///     }
-///
-///     values.sort();
-///     assert_eq!(&[1, 2, 3, 4, 5, 6], &values[..]);
 /// }
+///
+/// values.sort();
+/// assert_eq!(&[1, 2, 3, 4, 5, 6], &values[..]);
+/// # }
 /// ```
 ///
 /// Using the same future in multiple `select!` expressions can be done by passing
@@ -151,28 +148,27 @@
 /// use tokio_stream::{self as stream, StreamExt};
 /// use tokio::time::{self, Duration};
 ///
-/// #[tokio::main]
-/// async fn main() {
-///     let mut stream = stream::iter(vec![1, 2, 3]);
-///     let sleep = time::sleep(Duration::from_secs(1));
-///     tokio::pin!(sleep);
+/// # #[tokio::main] async fn main() {
+/// let mut stream = stream::iter(vec![1, 2, 3]);
+/// let sleep = time::sleep(Duration::from_secs(1));
+/// tokio::pin!(sleep);
 ///
-///     loop {
-///         selectme::select! {
-///             maybe_v = stream.next() => {
-///                 if let Some(v) = maybe_v {
-///                     println!("got = {}", v);
-///                 } else {
-///                     break;
-///                 }
-///             }
-///             _ = &mut sleep => {
-///                 println!("timeout");
+/// loop {
+///     selectme::select! {
+///         maybe_v = stream.next() => {
+///             if let Some(v) = maybe_v {
+///                 println!("got = {}", v);
+///             } else {
 ///                 break;
 ///             }
 ///         }
+///         _ = &mut sleep => {
+///             println!("timeout");
+///             break;
+///         }
 ///     }
 /// }
+/// # }
 /// ```
 ///
 /// Joining two values using `select!`.
@@ -180,69 +176,67 @@
 /// ```
 /// use tokio::sync::oneshot;
 ///
-/// #[tokio::main]
-/// async fn main() {
-///     let (tx1, mut rx1) = oneshot::channel();
-///     let (tx2, mut rx2) = oneshot::channel();
+/// # #[tokio::main] async fn main() {
+/// let (tx1, mut rx1) = oneshot::channel();
+/// let (tx2, mut rx2) = oneshot::channel();
 ///
-///     tokio::spawn(async move {
-///         tx1.send("first").unwrap();
-///     });
+/// tokio::spawn(async move {
+///     tx1.send("first").unwrap();
+/// });
 ///
-///     tokio::spawn(async move {
-///         tx2.send("second").unwrap();
-///     });
+/// tokio::spawn(async move {
+///     tx2.send("second").unwrap();
+/// });
 ///
-///     let mut a = None;
-///     let mut b = None;
+/// let mut a = None;
+/// let mut b = None;
 ///
-///     while a.is_none() || b.is_none() {
-///         selectme::select! {
-///             v1 = (&mut rx1) if a.is_none() => a = Some(v1.unwrap()),
-///             v2 = (&mut rx2) if b.is_none() => b = Some(v2.unwrap()),
-///         }
+/// while a.is_none() || b.is_none() {
+///     selectme::select! {
+///         v1 = (&mut rx1) if a.is_none() => a = Some(v1.unwrap()),
+///         v2 = (&mut rx2) if b.is_none() => b = Some(v2.unwrap()),
 ///     }
-///
-///     let res = (a.unwrap(), b.unwrap());
-///
-///     assert_eq!(res.0, "first");
-///     assert_eq!(res.1, "second");
 /// }
+///
+/// let res = (a.unwrap(), b.unwrap());
+///
+/// assert_eq!(res.0, "first");
+/// assert_eq!(res.1, "second");
+/// # }
 /// ```
 ///
 /// Showing how `select!` has a deterministic order by default. This is known as
 /// the [`biased` option in Tokio].
 ///
 /// ```
-/// #[tokio::main]
-/// async fn main() {
-///     let mut count = 0u8;
+/// # #[tokio::main] async fn main() {
+/// let mut count = 0u8;
 ///
-///     loop {
-///         selectme::select! {
-///             _ = async {} if count < 1 => {
-///                 count += 1;
-///                 assert_eq!(count, 1);
-///             }
-///             _ = async {} if count < 2 => {
-///                 count += 1;
-///                 assert_eq!(count, 2);
-///             }
-///             _ = async {} if count < 3 => {
-///                 count += 1;
-///                 assert_eq!(count, 3);
-///             }
-///             _ = async {} if count < 4 => {
-///                 count += 1;
-///                 assert_eq!(count, 4);
-///             }
+/// loop {
+///     selectme::select! {
+///         _ = async {} if count < 1 => {
+///             count += 1;
+///             assert_eq!(count, 1);
+///         }
+///         _ = async {} if count < 2 => {
+///             count += 1;
+///             assert_eq!(count, 2);
+///         }
+///         _ = async {} if count < 3 => {
+///             count += 1;
+///             assert_eq!(count, 3);
+///         }
+///         _ = async {} if count < 4 => {
+///             count += 1;
+///             assert_eq!(count, 4);
+///         }
 ///
-///             else => {
-///                 break;
-///             }
-///         };
-///     }
+///         else => {
+///             break;
+///         }
+///     };
 /// }
+/// # }
 /// ```
 ///
 /// ## Avoid racy `if` preconditions
@@ -261,24 +255,23 @@
 ///     // do work
 /// }
 ///
-/// #[tokio::main]
-/// async fn main() {
-///     let sleep = time::sleep(Duration::from_millis(50));
-///     tokio::pin!(sleep);
+/// # #[tokio::main] async fn main() {
+/// let sleep = time::sleep(Duration::from_millis(50));
+/// tokio::pin!(sleep);
 ///
-///     while !sleep.is_elapsed() {
-///         selectme::select! {
-///             _ = &mut sleep if !sleep.is_elapsed() => {
-///                 println!("operation timed out");
-///             }
-///             _ = some_async_work() => {
-///                 println!("operation completed");
-///             }
+/// while !sleep.is_elapsed() {
+///     selectme::select! {
+///         _ = &mut sleep if !sleep.is_elapsed() => {
+///             println!("operation timed out");
+///         }
+///         _ = some_async_work() => {
+///             println!("operation completed");
 ///         }
 ///     }
-///
-///     panic!("This example shows how not to do it!");
 /// }
+///
+/// panic!("This example shows how not to do it!");
+/// # }
 /// ```
 ///
 /// In the above example, `sleep.is_elapsed()` may return `true` even if
@@ -297,23 +290,22 @@
 ///     // do work
 /// }
 ///
-/// #[tokio::main]
-/// async fn main() {
-///     let sleep = time::sleep(Duration::from_millis(50));
-///     tokio::pin!(sleep);
+/// # #[tokio::main] async fn main() {
+/// let sleep = time::sleep(Duration::from_millis(50));
+/// tokio::pin!(sleep);
 ///
-///     loop {
-///         selectme::select! {
-///             _ = &mut sleep => {
-///                 println!("operation timed out");
-///                 break;
-///             }
-///             _ = some_async_work() => {
-///                 println!("operation completed");
-///             }
+/// loop {
+///     selectme::select! {
+///         _ = &mut sleep => {
+///             println!("operation timed out");
+///             break;
+///         }
+///         _ = some_async_work() => {
+///             println!("operation completed");
 ///         }
 ///     }
 /// }
+/// # }
 /// ```
 ///
 /// [`biased` option in Tokio]: https://docs.rs/tokio/latest/tokio/macro.select.html#fairness
@@ -324,7 +316,62 @@ macro_rules! select {
     }};
 }
 
-/// Fast version of [select!], which cannot use all possible control flows.
+/// Inline version of [select!][crate::select!] which evaluates to an instance
+/// of the [Select][crate::Select] type allowing for more efficient and
+/// ergonomical control flow.
+///
+/// This differs from [select!] in that it allows for retaining information on
+/// which branches have been disabled due to the future completing without
+/// having to rely on a [branch condition].
+///
+/// The `inline!` macro *does not* allow for performing additional asynchronous
+/// operations in the branches, nor affecting the control flow of the
+/// surrounding context like [select!] does.
+///
+/// The following would not compile, since the `break` is not evaluated in the
+/// context of the loop:
+///
+/// ```compile_fail
+/// # #[tokio::main]
+/// # pub async fn main() {
+/// let s1 = std::future::ready(());
+///
+/// loop {
+///     selectme::inline! {
+///         () = s1 => 1,
+///         else => break,
+///     }.await;
+/// }
+/// # }
+/// ```
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+/// use tokio::time;
+///
+/// # #[tokio::main] pub async fn main() {
+/// let s1 = time::sleep(Duration::from_millis(100));
+/// let s2 = time::sleep(Duration::from_millis(200));
+///
+/// let output = selectme::inline! {
+///     () = s1 => Some(1),
+///     _ = s2 => Some(2),
+///     else => None,
+/// };
+///
+/// tokio::pin!(output);
+///
+/// let mut values = Vec::new();
+///
+/// while let Some(output) = output.as_mut().next_pinned().await {
+///     values.push(output);
+/// }
+///
+/// assert_eq!(values, &[1, 2]);
+/// # }
+/// ```
 #[macro_export]
 macro_rules! inline {
     ($($tt:tt)*) => {{
