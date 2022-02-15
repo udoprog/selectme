@@ -9,8 +9,3 @@ async fn error_eof() {
     selectme::select! { binding = expr };
     selectme::select! { binding = expr => };
 }
-
-/// Empty selects are not permitted.
-async fn empty() {
-    selectme::select! {}
-}
