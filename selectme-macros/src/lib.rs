@@ -1,6 +1,5 @@
 mod error;
-mod output;
-mod parser;
+mod select;
 mod to_tokens;
 mod tok;
 mod token_stream;
@@ -13,7 +12,7 @@ use crate::token_stream::TokenStream;
 
 #[proc_macro]
 pub fn select(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let p = parser::Parser::new(input);
+    let p = select::Parser::new(input);
 
     let mut stream = TokenStream::default();
 
@@ -31,7 +30,7 @@ pub fn select(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 #[proc_macro]
 pub fn inline(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let p = parser::Parser::new(input);
+    let p = select::Parser::new(input);
 
     let mut stream = TokenStream::default();
 
@@ -56,8 +55,7 @@ fn format_errors(errors: Vec<Error>) -> impl ToTokens {
 
         if let Some(last) = it.next_back() {
             for error in it {
-                s.write(error);
-                s.write(';');
+                s.write((error, ';'));
             }
 
             s.write(last);

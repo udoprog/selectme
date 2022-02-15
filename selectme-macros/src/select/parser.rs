@@ -3,7 +3,7 @@ use std::ops;
 use proc_macro::{Delimiter, Ident, Spacing, Span, TokenTree};
 
 use crate::error::Error;
-use crate::output::Output;
+use crate::select::output::Output;
 
 enum Segment {
     Branch(Branch),

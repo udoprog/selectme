@@ -2,7 +2,7 @@ use std::ops;
 
 use proc_macro::TokenTree;
 
-use crate::parser::{Block, Branch, Else};
+use crate::select::parser::{Block, Branch, Else};
 use crate::to_tokens::{
     braced, bracketed, from_fn, group, parens, string, SpannedStream, ToTokens,
 };
@@ -79,8 +79,8 @@ impl Output {
                 if let Some(c) = &b.condition {
                     s.write(tok::if_else(
                         c.var.as_ref(),
-                        tok::Option::Some(&self.tokens[b.expr.clone()]),
-                        tok::Option::<()>::None,
+                        tok::option_some(&self.tokens[b.expr.clone()]),
+                        tok::OPTION_NONE,
                     ));
                 } else {
                     s.write(&self.tokens[b.expr.clone()]);
@@ -123,9 +123,9 @@ impl Output {
                     let poll = self.poll_body(b, Some(b.pin.as_ref()), mode);
 
                     let poll = (
-                        ("if", "let", tok::Option::Some("__fut"), '='),
+                        ("if", "let", tok::option_some("__fut"), '='),
                         ("Option", S, "as_pin_mut"),
-                        parens(tok::as_mut(b.pin.as_ref())),
+                        parens(tok::pin_as_mut(b.pin.as_ref())),
                         braced(poll),
                     );
 
@@ -138,7 +138,7 @@ impl Output {
             }
 
             if let Some(e) = &self.else_branch {
-                let body = ("return", tok::Poll::Ready(self.else_branch(mode, e)), ';');
+                let body = ("return", tok::poll_ready(self.else_branch(mode, e)), ';');
                 s.write(((self.support(), "DISABLED"), tok::ROCKET, braced(body)));
             }
 
@@ -170,7 +170,7 @@ impl Output {
                         '=',
                         '&',
                         "out",
-                        braced(("return", tok::Poll::Ready(body), ';')),
+                        braced(("return", tok::poll_ready(body), ';')),
                     ),
                 ));
             }
@@ -182,7 +182,7 @@ impl Output {
                     pat,
                     '=',
                     "out",
-                    braced(("return", tok::Poll::Ready(self.block(&b.block)), ';')),
+                    braced(("return", tok::poll_ready(self.block(&b.block)), ';')),
                 ));
             }
         })
@@ -227,10 +227,10 @@ impl Output {
         let future_poll = ("Future", S, "poll", parens(("__fut", ',', "cx")));
 
         (
-            ("if", "let", tok::Poll::Ready("out"), '='),
+            ("if", "let", tok::poll_ready("out"), '='),
             future_poll,
             braced((
-                unset.map(|var| (var, '.', "set", parens(tok::Option::<()>::None), ';')),
+                unset.map(|var| (var, '.', "set", parens(tok::OPTION_NONE), ';')),
                 // Unset the current branch in the mask, since it completed.
                 ("mask", '.', "clear", parens(b.index), ';'),
                 self.match_branch(b, mode),
