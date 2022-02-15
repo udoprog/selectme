@@ -128,6 +128,14 @@ where
     Group(Delimiter::Bracket, inner)
 }
 
+/// Construct a group with a custom delimiter.
+pub fn group<T>(delimiter: Delimiter, inner: T) -> impl ToTokens
+where
+    T: ToTokens,
+{
+    Group(delimiter, inner)
+}
+
 struct StringLiteral<'a>(&'a str);
 
 impl ToTokens for StringLiteral<'_> {

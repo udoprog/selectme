@@ -1,9 +1,11 @@
 use std::ops;
 
-use proc_macro::{Delimiter, TokenTree};
+use proc_macro::TokenTree;
 
 use crate::parser::{Block, Branch, Else};
-use crate::to_tokens::{braced, bracketed, from_fn, parens, string, SpannedStream, ToTokens};
+use crate::to_tokens::{
+    braced, bracketed, from_fn, group, parens, string, SpannedStream, ToTokens,
+};
 use crate::tok::{self, S};
 
 /// The name of the output enum.
@@ -271,9 +273,7 @@ impl Output {
 
     /// Expand a select which is awaited immediately.
     pub fn expand(self) -> impl ToTokens {
-        from_fn(move |s| {
-            let start = s.checkpoint();
-
+        braced(from_fn(move |s| {
             let imports = (self.support(), braced(("Future", ',', "Pin", ',', "Poll")));
 
             s.write(("use", imports, ';'));
@@ -322,8 +322,7 @@ impl Output {
                 braced((futures_decl, select_decl, loop_decl)),
                 braced(output_body),
             ));
-            s.group(Delimiter::Brace, start);
-        })
+        }))
     }
 }
 
@@ -333,9 +332,7 @@ fn clean_pattern(tree: impl Iterator<Item = TokenTree>) -> impl ToTokens {
         for tt in tree {
             match tt {
                 TokenTree::Group(g) => {
-                    let checkpoint = s.checkpoint();
-                    s.write(clean_pattern(g.stream().into_iter()));
-                    s.group(g.delimiter(), checkpoint);
+                    s.write(group(g.delimiter(), clean_pattern(g.stream().into_iter())));
                 }
                 TokenTree::Ident(i) => {
                     if i.to_string() == "mut" {
