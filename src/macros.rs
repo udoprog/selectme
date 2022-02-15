@@ -47,18 +47,6 @@
 /// 5. If **all** branches are disabled, evaluate the `else` expression. If no
 ///    else branch is provided, panic.
 ///
-/// ## Fairness
-///
-/// This [select!] implementation follows the same principle as [unicycle]. We
-/// maintain an atomic bitset of wake interest where each child task in the
-/// scheduler can register their interest in being woken up. Once this happens
-/// and the task is woken up, any child tasks that have registered interest will
-/// be polled in order.
-///
-/// This [select!] implementation can accomplish this without allocating. All
-/// the infrastructure necessary to drive all child tasks are statically
-/// allocated once and used as appropriate.
-///
 /// # Runtime characteristics
 ///
 /// By running all async expressions on the current task, the expressions are
@@ -328,7 +316,6 @@
 /// }
 /// ```
 ///
-/// [unicycle]: https://docs.rs/unicycle
 /// [`biased` option in Tokio]: https://docs.rs/tokio/latest/tokio/macro.select.html#fairness
 #[macro_export]
 macro_rules! select {
