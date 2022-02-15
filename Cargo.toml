@@ -28,5 +28,6 @@ rand = "0.8.5"
 
 [workspace]
 members = [
-    "selectme-macros"
+    "selectme-macros",
+    "build-benches/*"
 ]
