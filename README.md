@@ -7,14 +7,14 @@
 
 A fast and fair select! implementation for asynchronous programming.
 
-See [select!] for documentation.
+See the [select!] or [inline!] macros for documentation.
 
 ### Usage
 
 Add the following to your `Cargo.toml`:
 
 ```toml
-selectme = "0.2.4"
+selectme = "0.2.5"
 ```
 
 ### Examples
@@ -45,5 +45,6 @@ async fn main() {
 ```
 
 [select!]: https://docs.rs/selectme/latest/selectme/macro.select.html
+[inline!]: https://docs.rs/selectme/latest/selectme/macro.inline.html
 
 License: MIT/Apache-2.0

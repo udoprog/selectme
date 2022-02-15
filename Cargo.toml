@@ -1,6 +1,6 @@
 [package]
 name = "selectme"
-version = "0.2.4"
+version = "0.2.5"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
 license = "MIT/Apache-2.0"
@@ -18,7 +18,7 @@ default = ["std"]
 std = []
 
 [dependencies]
-selectme-macros = { path = "selectme-macros", version = "0.2.4" }
+selectme-macros = { path = "selectme-macros", version = "0.2.5" }
 
 [dev-dependencies]
 trybuild = "1.0"
