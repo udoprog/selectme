@@ -13,7 +13,7 @@ pub async fn main() {
     let mut s2_done = false;
 
     loop {
-        let output = selectme::select! {
+        let output = selectme::inline! {
             () = &mut s1 if !s1_done => {
                 s1_done = true;
                 None
@@ -24,7 +24,7 @@ pub async fn main() {
                 Some(instant)
             }
             else => {
-                break;
+                None
             }
         };
 

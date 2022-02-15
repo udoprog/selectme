@@ -40,15 +40,13 @@ impl Scenario {
 }
 
 macro_rules! test {
-    ($path:path, $polls:expr $(, $($extra:tt)*)*) => {
+    ($path:path, $polls:expr) => {
         tokio::spawn(async move {
-            let [mut v0, mut v1, mut v2, mut v3, mut v4, mut v5, mut v6, mut v7, mut v8, mut v9, mut v10, mut v11, mut v12, mut v13, mut v14, mut v15, mut v16, mut v17, mut v18, mut v19, mut v20, mut v21, mut v22, mut v23, mut v24, mut v25, mut v26, mut v27, mut v28, mut v29, mut v30, mut v31, mut v32, mut v33, mut v34, mut v35, mut v36, mut v37, mut v38, mut v39, mut v40, mut v41, mut v42, mut v43, mut v44, mut v45, mut v46, mut v47, mut v48, mut v49, mut v50, mut v51, mut v52, mut v53, mut v54, mut v55, mut v56, mut v57, mut v58, mut v59, mut v60, mut v61, mut v62, mut v63] = $polls;
-            let mut done = (false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+            let [mut v0, mut v1, mut v2, mut v3, mut v4, mut v5, mut v6, mut v7, mut v8, mut v9, mut v10, mut v11, mut v12, mut v13, mut v14, mut v15, mut v16, mut v17, mut v18, mut v19, mut v20, mut v21, mut v22, mut v23, mut v24, mut v25, mut v26, mut v27, mut v28, mut v29, mut v30, mut v31, mut v32, mut v33, mut v34, mut v35, mut v36, mut v37, mut v38, mut v39, mut v40, mut v41, mut v42, mut v43, mut v44, mut v45, mut v46, mut v47, mut v48, mut v49, mut v50, mut v51, mut v52, mut v53, mut v54, mut v55, mut v56, mut v57, mut v58, mut v59, mut v60, mut v61, mut v62, ..] = $polls;
+            let mut done = (false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 
             for _ in 0..COUNT {
                 $path! {
-                    $($($extra)*)*
-
                     _ = &mut v0, if !done.0 => { done.0 = true; }
                     _ = &mut v1, if !done.1 => { done.1 = true; }
                     _ = &mut v2, if !done.2 => { done.2 = true; }
@@ -112,11 +110,19 @@ macro_rules! test {
                     _ = &mut v60, if !done.60 => { done.60 = true; }
                     _ = &mut v61, if !done.61 => { done.61 = true; }
                     _ = &mut v62, if !done.62 => { done.62 = true; }
-                    _ = &mut v63, if !done.63 => { done.63 = true; }
                 }
             }
 
-            assert!(done.0 && done.1 && done.2 && done.3 && done.4 && done.5 && done.6 && done.7 && done.8 && done.9 && done.10 && done.11 && done.12 && done.13 && done.14 && done.15 && done.16 && done.17 && done.18 && done.19 && done.20 && done.21 && done.22 && done.23 && done.24 && done.25 && done.26 && done.27 && done.28 && done.29 && done.30 && done.31);
+            assert!(
+                done.0  && done.1  && done.2  && done.3  && done.4  && done.5  && done.6  && done.7  &&
+                done.8  && done.9  && done.10 && done.11 && done.12 && done.13 && done.14 && done.15 &&
+                done.16 && done.17 && done.18 && done.19 && done.20 && done.21 && done.22 && done.23 &&
+                done.24 && done.25 && done.26 && done.27 && done.28 && done.29 && done.30 && done.31 &&
+                done.32 && done.33 && done.34 && done.35 && done.36 && done.37 && done.38 && done.39 &&
+                done.40 && done.41 && done.42 && done.43 && done.44 && done.45 && done.46 && done.47 &&
+                done.48 && done.49 && done.50 && done.51 && done.52 && done.53 && done.54 && done.55 &&
+                done.56 && done.57 && done.58 && done.59 && done.60 && done.61 && done.62
+            );
         })
     }
 }
@@ -133,7 +139,7 @@ fn tokio_select(b: &mut Bencher) {
         runtime.block_on(async {
             for scenario in &scenarios {
                 let (polls, triggers) = scenario.build();
-                let poller = test!(selectme::select, polls);
+                let poller = test!(tokio::select, polls);
 
                 let t = thread::spawn(move || {
                     for t in triggers {
@@ -160,7 +166,7 @@ fn selectme_select(b: &mut Bencher) {
         runtime.block_on(async {
             for scenario in &scenarios {
                 let (polls, triggers) = scenario.build();
-                let poller = test!(selectme::select, polls);
+                let poller = test!(selectme::inline, polls);
 
                 let t = thread::spawn(move || {
                     for t in triggers {

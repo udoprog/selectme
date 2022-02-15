@@ -337,3 +337,11 @@ macro_rules! select {
         $crate::__support::select!($crate, $($tt)*)
     }};
 }
+
+/// Fast version of [select!], which cannot use all possible control flows.
+#[macro_export]
+macro_rules! inline {
+    ($($tt:tt)*) => {{
+        $crate::__support::inline!($crate, $($tt)*)
+    }};
+}

@@ -57,15 +57,11 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-mod set;
-
 mod atomic_waker;
-
-mod poller_waker;
-
-mod static_waker;
-
 mod poller;
+mod poller_waker;
+mod set;
+mod static_waker;
 
 #[macro_use]
 mod macros;
@@ -79,7 +75,7 @@ pub mod __support {
     pub use core::future::Future;
     pub use core::pin::Pin;
     pub use core::task::Poll;
-    pub use selectme_macros::select;
+    pub use selectme_macros::{inline, select};
 
     use crate::poller::Poller;
 

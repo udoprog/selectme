@@ -13,6 +13,13 @@ const OUT: &str = "Out";
 /// The private module in use.
 const PRIVATE: &str = "__private";
 
+/// Expansion mode.
+#[derive(Debug, Clone, Copy)]
+enum Mode {
+    Default,
+    Inline,
+}
+
 /// The parsed output.
 pub struct Output {
     tokens: Vec<TokenTree>,
@@ -104,7 +111,19 @@ impl Output {
         ("let", "mut", "__fut", '=', parens(init))
     }
 
-    fn matches(&self) -> impl ToTokens + '_ {
+    /// Render the else branch.
+    fn else_branch<'a>(&'a self, mode: Mode, e: &'a Else) -> impl ToTokens + 'a {
+        from_fn(move |s| match mode {
+            Mode::Default => {
+                s.write((PRIVATE, S, OUT, S, "Disabled"));
+            }
+            Mode::Inline => {
+                s.write(self.block(&e.block));
+            }
+        })
+    }
+
+    fn matches(&self, mode: Mode) -> impl ToTokens + '_ {
         from_fn(move |s| {
             for b in &self.branches {
                 s.write((b.index, tok::ROCKET));
@@ -119,7 +138,7 @@ impl Output {
 
                 if b.condition.is_some() {
                     let assign = ("let", "mut", b.pin.as_ref(), '=', fut, ';');
-                    let poll = self.poll_body(b, Some(b.pin.as_ref()));
+                    let poll = self.poll_body(b, Some(b.pin.as_ref()), mode);
 
                     let poll = (
                         ("if", "let", tok::Option::Some("__fut"), '='),
@@ -131,19 +150,14 @@ impl Output {
                     s.write(braced((assign, poll)));
                 } else {
                     let assign = ("let", "__fut", '=', fut, ';');
-                    let poll = self.poll_body(b, None);
+                    let poll = self.poll_body(b, None, mode);
                     s.write(braced((assign, poll)));
                 }
             }
 
             if let Some(e) = &self.else_branch {
-                if self.else_branch.is_some() {
-                    let body = ("break", (PRIVATE, S, OUT, S, "Disabled"), ';');
-                    s.write(((self.support(), "DISABLED"), tok::ROCKET, braced(body)));
-                } else {
-                    let body = ("break", self.block(&e.block), ';');
-                    s.write(((self.support(), "DISABLED"), tok::ROCKET, braced(body)));
-                }
+                let body = ("break", self.else_branch(mode, e), ';');
+                s.write(((self.support(), "DISABLED"), tok::ROCKET, braced(body)));
             }
 
             let panic_branch = (
@@ -158,19 +172,38 @@ impl Output {
     /// Generate the immediate match which performs a borrowing match over the
     /// pattern supplied by the user to determine whether we should break out of
     /// the loop with a value or not.
-    fn immediate_match<'a>(&'a self, b: &'a Branch) -> impl ToTokens + 'a {
-        let pat = clean_pattern(self.tokens[b.binding.clone()].iter().cloned());
+    fn match_branch<'a>(&'a self, b: &'a Branch, mode: Mode) -> impl ToTokens + 'a {
+        from_fn(move |s| match mode {
+            Mode::Default => {
+                let pat = clean_pattern(self.tokens[b.binding.clone()].iter().cloned());
 
-        let body = (
-            "break",
-            (PRIVATE, S, OUT, S, b.variant.as_ref()),
-            parens("out"),
-        );
+                let body = ((PRIVATE, S, OUT, S, b.variant.as_ref()), parens("out"));
 
-        (
-            ('#', bracketed(("allow", parens("unused_variables")))),
-            ("if", "let", pat, '=', '&', "out", braced((body, ';'))),
-        )
+                s.write((
+                    ('#', bracketed(("allow", parens("unused_variables")))),
+                    (
+                        "if",
+                        "let",
+                        pat,
+                        '=',
+                        '&',
+                        "out",
+                        braced(("break", body, ';')),
+                    ),
+                ));
+            }
+            Mode::Inline => {
+                let pat = &self.tokens[b.binding.clone()];
+                s.write((
+                    "if",
+                    "let",
+                    pat,
+                    '=',
+                    "out",
+                    braced(("break", self.block(&b.block), ';')),
+                ));
+            }
+        })
     }
 
     /// Generate the output matching branch.
@@ -183,7 +216,7 @@ impl Output {
     }
 
     /// Generate the output matching "else" branch.
-    fn else_branch<'a>(&'a self, e: &'a Else) -> impl ToTokens + 'a {
+    fn out_else<'a>(&'a self, e: &'a Else) -> impl ToTokens + 'a {
         (
             (PRIVATE, S, OUT, S, "Disabled"),
             (tok::ROCKET, self.block(&e.block)),
@@ -202,7 +235,12 @@ impl Output {
         })
     }
 
-    fn poll_body<'a>(&'a self, b: &'a Branch, unset: Option<&'a str>) -> impl ToTokens + 'a {
+    fn poll_body<'a>(
+        &'a self,
+        b: &'a Branch,
+        unset: Option<&'a str>,
+        mode: Mode,
+    ) -> impl ToTokens + 'a {
         let future_poll = ("Future", S, "poll", parens(("__fut", ',', "cx")));
 
         (
@@ -218,7 +256,7 @@ impl Output {
             braced((
                 unset.map(|var| (var, '.', "set", parens(tok::Option::<()>::None), ';')),
                 ("__select", '.', "clear", parens(b.index), ';'),
-                self.immediate_match(b),
+                self.match_branch(b, mode),
             )),
         )
     }
@@ -271,12 +309,20 @@ impl Output {
         })
     }
 
+    /// Generate imports.
+    fn imports(&self) -> impl ToTokens + '_ {
+        (
+            "use",
+            self.support(),
+            braced(("Future", ',', "Pin", ',', "Poll")),
+            ';',
+        )
+    }
+
     /// Expand a select which is awaited immediately.
     pub fn expand(self) -> impl ToTokens {
         braced(from_fn(move |s| {
-            let imports = (self.support(), braced(("Future", ',', "Pin", ',', "Poll")));
-
-            s.write(("use", imports, ';'));
+            s.write(self.imports());
             s.write(self.private_mod());
 
             let reset_base = self.conditions(s);
@@ -287,7 +333,7 @@ impl Output {
                 }
 
                 if let Some(e) = &self.else_branch {
-                    s.write(self.else_branch(e));
+                    s.write(self.out_else(e));
                 }
 
                 let panic_ = (
@@ -313,7 +359,7 @@ impl Output {
                 "loop",
                 braced((
                     ("match", "__select", '.', "next", parens(()), '.', "await"),
-                    braced(self.matches()),
+                    braced(self.matches(Mode::Default)),
                 )),
             );
 
@@ -322,6 +368,36 @@ impl Output {
                 braced((futures_decl, select_decl, loop_decl)),
                 braced(output_body),
             ));
+        }))
+    }
+
+    /// Expand a select which is awaited immediately.
+    pub fn expand_inline(self) -> impl ToTokens {
+        braced(from_fn(move |s| {
+            s.write(self.imports());
+            s.write(self.private_mod());
+
+            let reset_base = self.conditions(s);
+            let futures_decl = (self.futures(), ';');
+
+            let select_decl = (
+                ("let", "mut", "__select", '=', "unsafe"),
+                braced((
+                    (self.support(), "poller"),
+                    parens((('&', PRIVATE, S, "WAKER"), ',', self.mask_expr(reset_base))),
+                )),
+                ';',
+            );
+
+            let loop_decl = (
+                "loop",
+                braced((
+                    ("match", "__select", '.', "next", parens(()), '.', "await"),
+                    braced(self.matches(Mode::Inline)),
+                )),
+            );
+
+            s.write(braced((futures_decl, select_decl, loop_decl)));
         }))
     }
 }
