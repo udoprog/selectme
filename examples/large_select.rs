@@ -112,7 +112,7 @@ pub fn main() {
     runtime.block_on(async {
         for scenario in &scenarios {
             let (polls, triggers) = scenario.build();
-            let poller = test!(tokio::select, polls);
+            let poller = test!(selectme::select, polls);
 
             let t = thread::spawn(move || {
                 for t in triggers {

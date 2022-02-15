@@ -145,8 +145,7 @@
 ///         }
 ///     }
 ///
-///     // No need to sort since `selectme` is fair by default.
-///     // values.sort();
+///     values.sort();
 ///     assert_eq!(&[1, 2, 3, 4, 5, 6], &values[..]);
 /// }
 /// ```

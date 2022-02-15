@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::ops;
 
 use proc_macro::{Delimiter, Ident, Spacing, Span, TokenTree};
@@ -21,10 +20,14 @@ const COMMA: [char; 2] = [',', '\0'];
 const EQ: [char; 2] = ['=', '\0'];
 const ROCKET: [char; 2] = ['=', '>'];
 
+const BUF: usize = 2;
+
 /// A parser for the `select!` macro.
 pub struct Parser {
     it: proc_macro::token_stream::IntoIter,
-    buf: VecDeque<TokenTree>,
+    buf: [Option<TokenTree>; BUF],
+    head: usize,
+    tail: usize,
     tokens: Vec<TokenTree>,
     errors: Vec<Error>,
     // Re-usable string buffer.
@@ -36,7 +39,9 @@ impl Parser {
     pub(crate) fn new(stream: proc_macro::TokenStream) -> Self {
         Self {
             it: stream.into_iter(),
-            buf: VecDeque::new(),
+            buf: [None, None],
+            head: 0,
+            tail: 0,
             tokens: Vec::new(),
             errors: Vec::new(),
             string_buf: String::new(),
@@ -400,16 +405,18 @@ impl Parser {
 
     /// Access the token at the given offset.
     fn nth(&mut self, n: usize) -> Option<&TokenTree> {
-        while self.buf.len() <= n {
-            self.buf.push_back(self.it.next()?);
+        while (self.head - self.tail) <= n {
+            self.buf[self.head % BUF] = Some(self.it.next()?);
+            self.head += 1;
         }
 
-        self.buf.get(n)
+        self.buf.get((self.tail + n) % BUF)?.as_ref()
     }
 
     /// Bump the last token.
     fn bump(&mut self) -> Option<TokenTree> {
-        if let Some(head) = self.buf.pop_front() {
+        if let Some(head) = self.buf.get_mut(self.tail % BUF).and_then(|s| s.take()) {
+            self.tail += 1;
             return Some(head);
         }
 
