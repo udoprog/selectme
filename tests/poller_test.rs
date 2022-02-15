@@ -30,7 +30,7 @@ async fn poller_test() {
             let mut __fut = (Some(s1.as_mut()), Some(s2.as_mut()));
 
             let initial = if s1_done { 0 } else { 1 } | if s2_done { 0 } else { 2 };
-            let mut select = ::selectme::__support::poller(&private::WAKER, initial);
+            let mut select = unsafe { ::selectme::__support::poller(&private::WAKER, initial) };
 
             loop {
                 match select.next().await {

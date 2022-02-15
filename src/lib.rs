@@ -85,7 +85,7 @@ pub mod __support {
 
     /// Construct a new polling context from a custom function.
     #[inline]
-    pub fn poller(waker: &'static StaticWaker, mask: u64) -> Poller {
+    pub unsafe fn poller(waker: &'static StaticWaker, mask: u64) -> Poller {
         waker.set.reset(0);
         let snapshot = crate::set::Snapshot::new(mask);
         Poller::new(waker, snapshot)

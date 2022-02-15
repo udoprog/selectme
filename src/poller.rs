@@ -25,7 +25,11 @@ pub struct Poller {
 }
 
 impl Poller {
-    pub(crate) fn new(waker: &'static StaticWaker, snapshot: Snapshot) -> Self {
+    /// # Safety
+    ///
+    /// This poller instance must be the only one with exclusive access to the
+    /// provided [StaticWaker].
+    pub(crate) unsafe fn new(waker: &'static StaticWaker, snapshot: Snapshot) -> Self {
         Self {
             mask: snapshot,
             merge: true,
@@ -65,8 +69,14 @@ impl Poller {
             return false;
         }
 
-        // NB: perform a more costly registration of a waker and merge again.
-        self.waker.parent.register(cx.waker());
+        // Perform a more costly registration of a waker and merge again.
+        //
+        // SAFETY: Construction of the poller ensures that the atomic waker is
+        // exclusively held in here.
+        unsafe {
+            self.waker.parent.register(cx.waker());
+        }
+
         self.merge_from_shared();
 
         self.snapshot.is_empty()

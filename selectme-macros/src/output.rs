@@ -301,13 +301,11 @@ impl Output {
             let futures_decl = (self.futures(), ';');
 
             let select_decl = (
-                ("let", "mut", "__select"),
-                '=',
-                (
-                    self.support(),
-                    "poller",
+                ("let", "mut", "__select", '=', "unsafe"),
+                braced((
+                    (self.support(), "poller"),
                     parens((('&', PRIVATE, S, "WAKER"), ',', self.mask_expr(reset_base))),
-                ),
+                )),
                 ';',
             );
 
