@@ -1,6 +1,6 @@
 [package]
 name = "selectme-macros"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
 license = "MIT/Apache-2.0"

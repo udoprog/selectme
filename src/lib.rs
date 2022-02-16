@@ -14,7 +14,7 @@
 //! Add the following to your `Cargo.toml`:
 //!
 //! ```toml
-//! selectme = "0.4.1"
+//! selectme = "0.4.2"
 //! ```
 //!
 //! <br>
