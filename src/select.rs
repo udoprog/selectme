@@ -7,8 +7,10 @@ use crate::set::Set;
 /// Index which indicates that all branches have been disabled.
 pub const DISABLED: u32 = u32::MAX;
 
-/// The implementation used by the [select!][crate::select!] macro internally
-/// and returned by the [inline!][crate::inline!] macro.
+/// The implementation used by the [select!][crate::select!] and
+/// [inline!][crate::inline!] macro (unless the `static;` option is enabled).
+///
+/// See the [select!][crate::select!] macro for documentation on syntax.
 pub struct Select<S, T> {
     snapshot: Set,
     state: S,

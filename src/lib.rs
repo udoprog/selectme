@@ -12,7 +12,7 @@
 //! Add the following to your `Cargo.toml`:
 //!
 //! ```toml
-//! selectme = "0.3.0"
+//! selectme = "0.4.0"
 //! ```
 //!
 //! ## Examples
@@ -22,28 +22,108 @@
 //!
 //! ```
 //! async fn do_stuff_async() {
-//!     // async work
+//!     // work here
 //! }
 //!
 //! async fn more_async_work() {
-//!     // more here
+//!     // work here
 //! }
 //!
-//! #[tokio::main]
-//! async fn main() {
-//!     selectme::select! {
-//!         _ = do_stuff_async() => {
-//!             println!("do_stuff_async() completed first")
-//!         }
-//!         _ = more_async_work() => {
-//!             println!("more_async_work() completed first")
-//!         }
-//!     };
+//! # #[tokio::main] async fn main() {
+//! selectme::select! {
+//!     _ = do_stuff_async() => {
+//!         println!("do_stuff_async() completed first")
+//!     }
+//!     _ = more_async_work() => {
+//!         println!("more_async_work() completed first")
+//!     }
+//! };
+//! # }
+//! ```
+//!
+//! The [inline!] macro allows for fancier tricks. It produces instances of the
+//! [Select] or [StaticSelect] types allowing for more control over control
+//! flows.
+//!
+//! ```
+//! use std::time::Duration;
+//! use tokio::time;
+//!
+//! # #[tokio::main] pub async fn main() {
+//! let s1 = time::sleep(Duration::from_millis(100));
+//! let s2 = time::sleep(Duration::from_millis(200));
+//!
+//! let mut inlined_var = false;
+//!
+//! let output = selectme::inline! {
+//!     () = s1 => {
+//!         inlined_var = true;
+//!         Some(1)
+//!     }
+//!     _ = s2 => Some(2),
+//!     else => None,
+//! };
+//!
+//! tokio::pin!(output);
+//!
+//! while let Some(output) = output.as_mut().next().await {
+//!     dbg!(output);
 //! }
+//!
+//! dbg!(inlined_var);
+//! # }
+//! ```
+//!
+//! The more interesting trick is producing a [StaticSelect] through the
+//! `static;` option which can be properly named and used inside of another
+//! future.
+//!
+//! ```
+//! use std::future::Future;
+//! use std::pin::Pin;
+//! use std::task::{Context, Poll};
+//! use std::time::Duration;
+//!
+//! use selectme::StaticSelect;
+//! use tokio::time::{self, Sleep};
+//!
+//! struct MyFuture {
+//!     select: StaticSelect<(Sleep, Sleep), Option<u32>>,
+//! }
+//!
+//! impl Future for MyFuture {
+//!     type Output = Option<u32>;
+//!
+//!     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+//!         /// SAFETY: MyFuture is correctly pinned and this projection is therefore correct.
+//!         let select = unsafe { Pin::map_unchecked_mut(self, |f| &mut f.select) };
+//!
+//!         select.poll_next(cx)
+//!     }
+//! }
+//!
+//! # #[tokio::main] pub async fn main() {
+//! let s1 = time::sleep(Duration::from_millis(100));
+//! let s2 = time::sleep(Duration::from_millis(200));
+//!
+//! let my_future = MyFuture {
+//!     select: selectme::inline! {
+//!         static;
+//!
+//!         () = s1 => Some(1),
+//!         _ = s2 => Some(2),
+//!         else => None,
+//!     }
+//! };
+//!
+//! assert_eq!(my_future.await, Some(1));
+//! # }
 //! ```
 //!
 //! [select!]: https://docs.rs/selectme/latest/selectme/macro.select.html
 //! [inline!]: https://docs.rs/selectme/latest/selectme/macro.inline.html
+//! [Select]: https://docs.rs/selectme/latest/selectme/struct.Select.html
+//! [StaticSelect]: https://docs.rs/selectme/latest/selectme/struct.StaticSelect.html
 
 // This project contains code and documentation licensed under the MIT license
 // from the futures-rs project.

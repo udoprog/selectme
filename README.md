@@ -14,7 +14,7 @@ See the [select!] or [inline!] macros for documentation.
 Add the following to your `Cargo.toml`:
 
 ```toml
-selectme = "0.3.0"
+selectme = "0.4.0"
 ```
 
 ### Examples

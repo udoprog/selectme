@@ -10,7 +10,8 @@ use crate::set::Set;
 type StaticPoll<S, O> = fn(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>;
 
 /// The implementation used by the [select!][crate::select!] macro internally
-/// and returned by the [inline!][crate::inline!] macro.
+/// and returned by the [inline!][crate::inline!] macro when the `static;`
+/// option is enabled.
 pub struct StaticSelect<S, O> {
     snapshot: Set,
     state: S,
