@@ -9,6 +9,8 @@ A fast and fair select! implementation for asynchronous programming.
 
 See the [select!] or [inline!] macros for documentation.
 
+<br>
+
 ### Usage
 
 Add the following to your `Cargo.toml`:
@@ -17,6 +19,8 @@ Add the following to your `Cargo.toml`:
 selectme = "0.4.0"
 ```
 
+<br>
+
 ### Examples
 
 The following is a simple example showcasing two branches being polled
@@ -24,27 +28,108 @@ concurrently. For more documentation see [select!].
 
 ```rust
 async fn do_stuff_async() {
-    // async work
+    // work here
 }
 
 async fn more_async_work() {
-    // more here
+    // work here
 }
 
-#[tokio::main]
-async fn main() {
-    selectme::select! {
-        _ = do_stuff_async() => {
-            println!("do_stuff_async() completed first")
-        }
-        _ = more_async_work() => {
-            println!("more_async_work() completed first")
-        }
-    };
+selectme::select! {
+    _ = do_stuff_async() => {
+        println!("do_stuff_async() completed first")
+    }
+    _ = more_async_work() => {
+        println!("more_async_work() completed first")
+    }
+};
+```
+
+<br>
+
+## The `inline!` macro
+
+The [inline!] macro provides an *inlined* variant of the [select!] macro.
+
+Instead of awaiting directly it evaluates to an instance of the [Select] or
+[StaticSelect] allowing for more efficient multiplexing and complex control
+flow.
+
+When combined with the `static;` option it performs the least amount of
+magic possible to multiplex multiple asynchronous operations making it
+suitable for efficient and custom abstractions.
+
+```rust
+use std::time::Duration;
+use tokio::time;
+
+async fn async_operation() -> u32 {
+    // work here
 }
+
+let output = selectme::inline! {
+    output = async_operation() => Some(output),
+    () = time::sleep(Duration::from_secs(5)) => None,
+}.await;
+
+match output {
+    Some(output) => {
+        assert_eq!(output, 42);
+    }
+    None => {
+        panic!("operation timed out!")
+    }
+}
+```
+
+The more interesting trick is producing a [StaticSelect] through the
+`static;` option which can be properly named and used inside of another
+future.
+
+```rust
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::time::Duration;
+
+use pin_project::pin_project;
+use selectme::StaticSelect;
+use tokio::time::{self, Sleep};
+
+#[pin_project]
+struct MyFuture {
+    #[pin]
+    select: StaticSelect<(Sleep, Sleep), Option<u32>>,
+}
+
+impl Future for MyFuture {
+    type Output = Option<u32>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        this.select.poll_next(cx)
+    }
+}
+
+let s1 = time::sleep(Duration::from_millis(100));
+let s2 = time::sleep(Duration::from_millis(200));
+
+let my_future = MyFuture {
+    select: selectme::inline! {
+        static;
+
+        () = s1 => Some(1),
+        _ = s2 => Some(2),
+        else => None,
+    }
+};
+
+assert_eq!(my_future.await, Some(1));
 ```
 
 [select!]: https://docs.rs/selectme/latest/selectme/macro.select.html
 [inline!]: https://docs.rs/selectme/latest/selectme/macro.inline.html
+[Select]: https://docs.rs/selectme/latest/selectme/struct.Select.html
+[StaticSelect]: https://docs.rs/selectme/latest/selectme/struct.StaticSelect.html
 
 License: MIT/Apache-2.0

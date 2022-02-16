@@ -7,6 +7,8 @@
 //!
 //! See the [select!] or [inline!] macros for documentation.
 //!
+//! <br>
+//!
 //! ## Usage
 //!
 //! Add the following to your `Cargo.toml`:
@@ -14,6 +16,8 @@
 //! ```toml
 //! selectme = "0.4.0"
 //! ```
+//!
+//! <br>
 //!
 //! ## Examples
 //!
@@ -41,36 +45,44 @@
 //! # }
 //! ```
 //!
-//! The [inline!] macro allows for fancier tricks. It produces instances of the
-//! [Select] or [StaticSelect] types allowing for more control over control
-//! flows.
+//! <br>
+//!
+//! # The `inline!` macro
+//!
+//! The [inline!] macro provides an *inlined* variant of the [select!] macro.
+//!
+//! Instead of awaiting directly it evaluates to an instance of the [Select] or
+//! [StaticSelect] allowing for more efficient multiplexing and complex control
+//! flow.
+//!
+//! When combined with the `static;` option it performs the least amount of
+//! magic possible to multiplex multiple asynchronous operations making it
+//! suitable for efficient and custom abstractions.
 //!
 //! ```
 //! use std::time::Duration;
 //! use tokio::time;
 //!
-//! # #[tokio::main] pub async fn main() {
-//! let s1 = time::sleep(Duration::from_millis(100));
-//! let s2 = time::sleep(Duration::from_millis(200));
-//!
-//! let mut inlined_var = false;
-//!
-//! let output = selectme::inline! {
-//!     () = s1 => {
-//!         inlined_var = true;
-//!         Some(1)
-//!     }
-//!     _ = s2 => Some(2),
-//!     else => None,
-//! };
-//!
-//! tokio::pin!(output);
-//!
-//! while let Some(output) = output.as_mut().next().await {
-//!     dbg!(output);
+//! async fn async_operation() -> u32 {
+//!     // work here
+//! # 42
 //! }
 //!
-//! dbg!(inlined_var);
+//! # #[tokio::main]
+//! # pub async fn main() {
+//! let output = selectme::inline! {
+//!     output = async_operation() => Some(output),
+//!     () = time::sleep(Duration::from_secs(5)) => None,
+//! }.await;
+//!
+//! match output {
+//!     Some(output) => {
+//!         assert_eq!(output, 42);
+//!     }
+//!     None => {
+//!         panic!("operation timed out!")
+//!     }
+//! }
 //! # }
 //! ```
 //!
@@ -84,10 +96,13 @@
 //! use std::task::{Context, Poll};
 //! use std::time::Duration;
 //!
+//! use pin_project::pin_project;
 //! use selectme::StaticSelect;
 //! use tokio::time::{self, Sleep};
 //!
+//! #[pin_project]
 //! struct MyFuture {
+//!     #[pin]
 //!     select: StaticSelect<(Sleep, Sleep), Option<u32>>,
 //! }
 //!
@@ -95,10 +110,8 @@
 //!     type Output = Option<u32>;
 //!
 //!     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-//!         /// SAFETY: MyFuture is correctly pinned and this projection is therefore correct.
-//!         let select = unsafe { Pin::map_unchecked_mut(self, |f| &mut f.select) };
-//!
-//!         select.poll_next(cx)
+//!         let this = self.project();
+//!         this.select.poll_next(cx)
 //!     }
 //! }
 //!

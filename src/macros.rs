@@ -316,20 +316,30 @@ macro_rules! select {
     }};
 }
 
-/// Inline version of [select!][crate::select!] which evaluates to an instance
-/// of the [Select][crate::Select] type allowing for more efficient and
-/// ergonomical control flow.
+/// The `inline!` macro provides an *inlined* variant of the [select!] macro.
 ///
-/// This differs from [select!] in that it allows for retaining information on
-/// which branches have been disabled due to the future completing without
-/// having to rely on a [branch condition].
+/// Instead of awaiting directly it evaluates to an instance of the
+/// [Select][crate::Select] or [StaticSelect][crate::StaticSelect] allowing for
+/// more efficient multiplexing and complex control flow.
 ///
-/// The `inline!` macro *does not* allow for performing additional asynchronous
-/// operations in the branches, nor affecting the control flow of the
-/// surrounding context like [select!] does.
+/// When combined with the `static;` option it performs the least amount of
+/// magic possible to multiplex multiple asynchronous operations making it
+/// suitable for efficient and custom abstractions.
 ///
-/// The following would not compile, since the `break` is not evaluated in the
-/// context of the loop:
+/// <br>
+///
+/// # Branches and state
+///
+/// The `inline!` macro differs from [select!] in that it allows for retaining
+/// information on which branches have been disabled due to the future
+/// completing without having to rely on a [branch condition].
+///
+/// In contrast to [select!] it *does not* allow for performing additional
+/// asynchronous operations *in the branches*, nor affecting the control flow of
+/// the surrounding context like through `break`.
+///
+/// The following would not compile, since the `break` below is not evaluated in
+/// the context of the loop:
 ///
 /// ```compile_fail
 /// # #[tokio::main]
@@ -345,6 +355,38 @@ macro_rules! select {
 /// # }
 /// ```
 ///
+/// While this seems like it would make it less useful, instead it means that it
+/// can efficiently perform inline common inline operations like timeouts.
+///
+/// ```
+/// use std::time::Duration;
+/// use tokio::time;
+///
+/// async fn async_operation() -> u32 {
+///     // work here
+/// # 42
+/// }
+///
+/// # #[tokio::main]
+/// # pub async fn main() {
+/// let output = selectme::inline! {
+///     output = async_operation() => Some(output),
+///     () = time::sleep(Duration::from_secs(5)) => None,
+/// }.await;
+///
+/// match output {
+///     Some(output) => {
+///         assert_eq!(output, 42);
+///     }
+///     None => {
+///         panic!("operation timed out!")
+///     }
+/// }
+/// # }
+/// ```
+///
+/// <br>
+///
 /// # Static selects
 ///
 /// The `inline!` macro can also make use of the `static;` option, which allows
@@ -358,10 +400,14 @@ macro_rules! select {
 /// use std::pin::Pin;
 /// use std::task::{Context, Poll};
 /// use std::time::Duration;
+///
+/// use pin_project::pin_project;
 /// use selectme::StaticSelect;
 /// use tokio::time::{self, Sleep};
 ///
+/// #[pin_project]
 /// struct MyFuture {
+///     #[pin]
 ///     select: StaticSelect<(Sleep, Sleep), Option<u32>>,
 /// }
 ///
@@ -369,10 +415,8 @@ macro_rules! select {
 ///     type Output = Option<u32>;
 ///
 ///     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-///         /// SAFETY: MyFuture is correctly pinned and this projection is therefore correct.
-///         let select = unsafe { Pin::map_unchecked_mut(self, |f| &mut f.select) };
-///
-///         select.poll_next(cx)
+///         let this = self.project();
+///         this.select.poll_next(cx)
 ///     }
 /// }
 ///
@@ -393,6 +437,8 @@ macro_rules! select {
 /// assert_eq!(my_future.await, Some(1));
 /// # }
 /// ```
+///
+/// <br>
 ///
 /// # Examples
 ///
