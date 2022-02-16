@@ -1,6 +1,6 @@
 [package]
 name = "selectme"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
 license = "MIT/Apache-2.0"
@@ -20,7 +20,7 @@ tokio-entry = ["selectme-macros/tokio-entry"]
 tokio-diagnostics = ["selectme-macros/tokio-diagnostics"]
 
 [dependencies]
-selectme-macros = { path = "selectme-macros", version = "0.4.2" }
+selectme-macros = { path = "selectme-macros", version = "0.4.3" }
 
 [dev-dependencies]
 trybuild = "1.0"
