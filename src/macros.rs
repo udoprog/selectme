@@ -345,6 +345,55 @@ macro_rules! select {
 /// # }
 /// ```
 ///
+/// # Static selects
+///
+/// The `inline!` macro can also make use of the `static;` option, which allows
+/// the select that is generated to be named. This can be useful if you want to
+/// incorporate selection-like behaviour into another future.
+///
+/// Note that this option is not supported in [select!].
+///
+/// ```
+/// use std::future::Future;
+/// use std::pin::Pin;
+/// use std::task::{Context, Poll};
+/// use std::time::Duration;
+/// use selectme::StaticSelect;
+/// use tokio::time::{self, Sleep};
+///
+/// struct MyFuture {
+///     select: StaticSelect<(Sleep, Sleep), Option<u32>>,
+/// }
+///
+/// impl Future for MyFuture {
+///     type Output = Option<u32>;
+///
+///     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+///         /// SAFETY: MyFuture is correctly pinned and this projection is therefore correct.
+///         let select = unsafe { Pin::map_unchecked_mut(self, |f| &mut f.select) };
+///
+///         select.poll_next(cx)
+///     }
+/// }
+///
+/// # #[tokio::main] pub async fn main() {
+/// let s1 = time::sleep(Duration::from_millis(100));
+/// let s2 = time::sleep(Duration::from_millis(200));
+///
+/// let my_future = MyFuture {
+///     select: selectme::inline! {
+///         static;
+///
+///         () = s1 => Some(1),
+///         _ = s2 => Some(2),
+///         else => None,
+///     }
+/// };
+///
+/// assert_eq!(my_future.await, Some(1));
+/// # }
+/// ```
+///
 /// # Examples
 ///
 /// ```

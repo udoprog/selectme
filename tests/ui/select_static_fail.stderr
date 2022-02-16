@@ -1,0 +1,17 @@
+error: `static` option is only supported with the `inline!` macro
+ --> tests/ui/select_static_fail.rs:7:9
+  |
+7 |         static;
+  |         ^^^^^^
+
+error: `static` option may only be specified once
+  --> tests/ui/select_static_fail.rs:15:9
+   |
+15 |         static;
+   |         ^^^^^^
+
+error: `static` option previously specified here
+  --> tests/ui/select_static_fail.rs:14:9
+   |
+14 |         static;
+   |         ^^^^^^

@@ -5,7 +5,7 @@ use proc_macro::{Delimiter, Ident, Span, TokenTree};
 use crate::error::Error;
 use crate::parsing::{BaseParser, Buf, Punct};
 use crate::parsing::{COMMA, EQ, ROCKET};
-use crate::select::output::{Output, SelectKind};
+use crate::select::output::{Mode, Output, SelectKind};
 
 enum Segment {
     Branch(Branch),
@@ -40,7 +40,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse and produce the corresponding token stream.
-    pub(crate) fn parse(mut self) -> Result<Output, Vec<Error>> {
+    pub(crate) fn parse(mut self, mode: Mode) -> Result<Output, Vec<Error>> {
         let mut branches = Vec::new();
         let mut else_branch = None;
         let mut index = 0;
@@ -62,15 +62,20 @@ impl<'a> Parser<'a> {
                         biased = true;
                     }
                     "static" => {
-                        if let Some((span, _)) = &select_kind {
+                        if !matches!(mode, Mode::Inline) {
                             self.errors.push(Error::new(
                                 ident.span(),
-                                "option `static` should only be specified once",
+                                "`static` option is only supported with the `inline!` macro",
+                            ));
+                        } else if let Some((span, _)) = &select_kind {
+                            self.errors.push(Error::new(
+                                ident.span(),
+                                "`static` option may only be specified once",
                             ));
 
                             self.errors.push(Error::new(
                                 span.clone(),
-                                "option `static` previously specified here",
+                                "`static` option previously specified here",
                             ));
                         } else {
                             select_kind = Some((ident.span(), SelectKind::StaticSelect));
@@ -133,6 +138,7 @@ impl<'a> Parser<'a> {
 
         Ok(Output::new(
             self.base.into_tokens(),
+            mode,
             krate,
             branches,
             else_branch,
