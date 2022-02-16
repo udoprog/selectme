@@ -126,9 +126,16 @@ impl Output {
         })
     }
 
+    fn allow_unreachable_code(&self) -> impl ToTokens {
+        ('#', bracketed(("allow", parens("unreachable_code"))))
+    }
+
     fn matches(&self) -> impl ToTokens + '_ {
         from_fn(move |s| {
             for b in &self.branches {
+                // We need to allow unreachable cause the expression that
+                // generates the index might not be expressed.
+                s.write(self.allow_unreachable_code());
                 s.write((b.index, tok::ROCKET));
 
                 let fut = (

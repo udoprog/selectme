@@ -17,6 +17,7 @@ categories = ["asynchronous", "concurrency"]
 default = ["std"]
 std = []
 tokio-entry = ["selectme-macros/tokio-entry"]
+tokio-diagnostics = ["selectme-macros/tokio-diagnostics"]
 
 [dependencies]
 selectme-macros = { path = "selectme-macros", version = "0.4.2" }

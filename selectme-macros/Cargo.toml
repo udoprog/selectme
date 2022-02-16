@@ -17,6 +17,7 @@ categories = ["asynchronous", "concurrency"]
 default = []
 # Define the tokio entry macros.
 tokio-entry = []
+tokio-diagnostics = []
 
 [lib]
 proc-macro = true

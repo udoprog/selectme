@@ -5,6 +5,7 @@ use proc_macro::{Span, TokenTree};
 use crate::error::Error;
 use crate::to_tokens::{braced, bracketed, from_fn, parens, string, ToTokens};
 use crate::tok::S;
+use crate::token_stream::TokenStream;
 
 #[derive(Debug, Clone, Copy)]
 pub enum EntryKind {
@@ -87,6 +88,13 @@ impl Config {
             }
             _ => {}
         }
+
+        match (self.flavor(), &self.worker_threads) {
+            (RuntimeFlavor::CurrentThread, Some(tt)) => {
+                errors.push(Error::new(tt.span(), format!("The `worker_threads` option requires the `multi_thread` runtime flavor. Use `#[{}(flavor = \"multi_thread\")]`", kind.name())));
+            }
+            _ => {}
+        }
     }
 
     /// Get the runtime flavor to use.
@@ -122,18 +130,79 @@ impl ItemOutput {
     }
 
     /// Expand into a function item.
-    pub fn expand_item(&self, kind: EntryKind, config: Config) -> impl ToTokens + '_ {
+    pub fn expand_item(&self, kind: EntryKind, config: Config, start: Span) -> impl ToTokens + '_ {
         from_fn(move |s| {
             if let (Some(signature), Some(block)) = (self.signature.clone(), self.block.clone()) {
                 s.write((
                     self.entry_kind_attribute(kind),
                     &self.tokens[signature],
-                    braced(self.item_body(config, block)),
+                    braced(self.item_body(config, block, start)),
                 ))
             } else {
                 s.write(&self.tokens[..]);
             }
         })
+    }
+
+    /// Find the span of the block which can be used as a fallback for generated
+    /// code.
+    #[cfg(feature = "tokio-diagnostics")]
+    pub fn find_block_span(&self) -> Option<Span> {
+        let block = self.block.as_ref()?.clone();
+
+        // NB: block is *expected* to define a single block, but we're being a
+        // bit more liberal here.
+        match &self.tokens[block] {
+            [TokenTree::Group(g), ..] => Some(g.span()),
+            _ => None,
+        }
+    }
+
+    #[cfg(not(feature = "tokio-diagnostics"))]
+    pub fn find_block_span(&self) -> Option<Span> {
+        None
+    }
+
+    /// Find the range of spans that is defined by the last statement in the
+    /// block so that they can be used for the generated expression.
+    ///
+    /// This in turn improves upon diagnostics when return types do not match.
+    #[cfg(feature = "tokio-diagnostics")]
+    pub fn find_last_stmt_range(&self) -> Option<(Span, Span)> {
+        let block = self.block.as_ref()?.clone();
+
+        let mut start = None;
+        let mut end = None;
+        let mut update = true;
+
+        // NB: block is *expected* to define a single block, but we're being a
+        // bit more liberal here.
+        if let [TokenTree::Group(g), ..] = &self.tokens[block] {
+            for tt in g.stream() {
+                let span = tt.span();
+                end = Some(span);
+
+                match tt {
+                    TokenTree::Punct(p) if p.as_char() == ';' => {
+                        update = true;
+                    }
+                    _ => {
+                        if std::mem::take(&mut update) {
+                            start = Some(span);
+                        }
+                    }
+                }
+            }
+
+            return Some((start?, end?));
+        }
+
+        None
+    }
+
+    #[cfg(not(feature = "tokio-diagnostics"))]
+    pub fn find_last_stmt_range(&self) -> Option<(Span, Span)> {
+        None
     }
 
     /// Generate attribute associated with entry kind.
@@ -149,8 +218,14 @@ impl ItemOutput {
     }
 
     /// Expanded item body.
-    fn item_body(&self, config: Config, block: ops::Range<usize>) -> impl ToTokens + '_ {
-        let rt = ("tokio", S, "runtime", S, "Builder");
+    fn item_body(
+        &self,
+        config: Config,
+        block: ops::Range<usize>,
+        start: Span,
+    ) -> impl ToTokens + '_ {
+        // NB: override the first generated part with the detected start span.
+        let rt = with_span(("tokio", S, "runtime", S, "Builder"), start);
 
         let rt = from_fn(move |s| {
             s.write(rt);
@@ -181,10 +256,27 @@ impl ItemOutput {
         );
 
         (
-            build,
-            '.',
-            "block_on",
+            (build, '.', "block_on"),
             parens(("async", &self.tokens[block])),
         )
+    }
+}
+
+/// Insert the given tokens with a custom span.
+pub fn with_span<T>(inner: T, span: Span) -> impl ToTokens
+where
+    T: ToTokens,
+{
+    WithSpan(inner, span)
+}
+
+struct WithSpan<T>(T, Span);
+
+impl<T> ToTokens for WithSpan<T>
+where
+    T: ToTokens,
+{
+    fn to_tokens(self, stream: &mut TokenStream, _: Span) {
+        self.0.to_tokens(stream, self.1);
     }
 }
