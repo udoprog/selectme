@@ -13,6 +13,20 @@ impl ToTokens for TokenStream {
     }
 }
 
+impl ToTokens for proc_macro::TokenStream {
+    fn to_tokens(self, stream: &mut TokenStream, _: Span) {
+        for tt in self {
+            stream.push(tt);
+        }
+    }
+}
+
+impl ToTokens for TokenTree {
+    fn to_tokens(self, stream: &mut TokenStream, _: Span) {
+        stream.push(self);
+    }
+}
+
 impl<T> ToTokens for Option<T>
 where
     T: ToTokens,
@@ -104,7 +118,7 @@ where
     }
 }
 
-/// Construct a parenthesized group.
+/// Construct a parenthesized group `(<inner>)`.
 pub fn parens<T>(inner: T) -> impl ToTokens
 where
     T: ToTokens,
@@ -112,7 +126,7 @@ where
     Group(Delimiter::Parenthesis, inner)
 }
 
-/// Construct a braced group.
+/// Construct a braced group `{<inner>}`.
 pub fn braced<T>(inner: T) -> impl ToTokens
 where
     T: ToTokens,
@@ -120,7 +134,7 @@ where
     Group(Delimiter::Brace, inner)
 }
 
-/// Construct a bracketed group.
+/// Construct a bracketed group `[<inner>]`.
 pub fn bracketed<T>(inner: T) -> impl ToTokens
 where
     T: ToTokens,

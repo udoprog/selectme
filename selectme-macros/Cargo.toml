@@ -14,7 +14,7 @@ A fast and fair select! macro for asynchronous Rust.
 categories = ["asynchronous", "concurrency"]
 
 [features]
-default = ["tokio-entry"]
+default = []
 # Define the tokio entry macros.
 tokio-entry = []
 

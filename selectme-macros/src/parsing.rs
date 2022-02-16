@@ -1,26 +1,121 @@
+use core::fmt;
 use core::slice::SliceIndex;
 
-use proc_macro::TokenTree;
+use proc_macro::{Spacing, Span, TokenTree};
 
 const BUF: usize = 2;
 
-/// Parser base.
-pub struct Parser {
-    it: proc_macro::token_stream::IntoIter,
-    buf: [Option<TokenTree>; BUF],
+// Punctuations that we look for.
+pub const COMMA: [char; 2] = [',', '\0'];
+pub const EQ: [char; 2] = ['=', '\0'];
+pub const ROCKET: [char; 2] = ['=', '>'];
+
+pub struct Buf {
+    // Static ring buffer used for processing tokens.
+    ring: [Option<TokenTree>; BUF],
     head: usize,
     tail: usize,
-    tokens: Vec<TokenTree>,
+    // Re-usable string buffer.
+    string: String,
 }
 
-impl Parser {
-    pub fn new(stream: proc_macro::TokenStream) -> Self {
+impl Buf {
+    pub fn new() -> Self {
         Self {
-            it: stream.into_iter(),
-            buf: [None, None],
+            ring: [None, None],
+            string: String::new(),
             head: 0,
             tail: 0,
+        }
+    }
+
+    /// Clear the buffer.
+    fn clear(&mut self) {
+        self.ring = [None, None];
+        self.head = 0;
+        self.tail = 0;
+        self.string.clear();
+    }
+
+    /// Get the next element out of the ring buffer.
+    pub fn next(&mut self) -> Option<TokenTree> {
+        if let Some(head) = self.ring.get_mut(self.tail % BUF).and_then(|s| s.take()) {
+            self.tail += 1;
+            Some(head)
+        } else {
+            None
+        }
+    }
+
+    fn fill<I>(&mut self, n: usize, mut it: I) -> Option<()>
+    where
+        I: Iterator<Item = TokenTree>,
+    {
+        assert!(n <= BUF);
+
+        while (self.head - self.tail) <= n {
+            self.ring[self.head % BUF] = Some(it.next()?);
+            self.head += 1;
+        }
+
+        Some(())
+    }
+
+    /// Try to get the `n`th token and fill from the provided iterator if neede.
+    pub fn nth<I>(&mut self, n: usize, it: I) -> Option<&TokenTree>
+    where
+        I: Iterator<Item = TokenTree>,
+    {
+        self.fill(n, it)?;
+        self.ring.get((self.tail + n) % BUF)?.as_ref()
+    }
+
+    /// Try to get the next pair of tokens.
+    pub fn peek2<I>(&mut self, it: I) -> Option<(&TokenTree, &TokenTree)>
+    where
+        I: Iterator<Item = TokenTree>,
+    {
+        self.fill(1, it)?;
+        let a = self.ring.get((self.tail) % BUF)?.as_ref()?;
+        let b = self.ring.get((self.tail + 1) % BUF)?.as_ref()?;
+        Some((a, b))
+    }
+
+    /// Coerce the given value into a string by formatting into an existing
+    /// string buffer.
+    pub fn display_as_str(&mut self, value: impl fmt::Display) -> &str {
+        use std::fmt::Write;
+
+        self.string.clear();
+        let _ = write!(&mut self.string, "{}", value);
+        self.string.as_str()
+    }
+
+    /// Test if the given [TokenTree] matches the specified condition.
+    pub fn ident_matches(&mut self, tt: &TokenTree, cond: impl FnOnce(&str) -> bool) -> bool {
+        if let TokenTree::Ident(ident) = tt {
+            return cond(self.display_as_str(ident));
+        }
+
+        false
+    }
+}
+
+/// Parser base.
+pub struct BaseParser<'a> {
+    it: proc_macro::token_stream::IntoIter,
+    tokens: Vec<TokenTree>,
+    pub(crate) buf: &'a mut Buf,
+}
+
+impl<'a> BaseParser<'a> {
+    pub fn new(stream: proc_macro::TokenStream, buf: &'a mut Buf) -> Self {
+        buf.clear();
+
+        Self {
+            it: stream.into_iter(),
             tokens: Vec::new(),
+            buf,
         }
     }
 
@@ -57,18 +152,17 @@ impl Parser {
 
     /// Access the token at the given offset.
     pub fn nth(&mut self, n: usize) -> Option<&TokenTree> {
-        while (self.head - self.tail) <= n {
-            self.buf[self.head % BUF] = Some(self.it.next()?);
-            self.head += 1;
-        }
+        self.buf.nth(n, &mut self.it)
+    }
 
-        self.buf.get((self.tail + n) % BUF)?.as_ref()
+    /// Access the next two tokens.
+    pub fn peek2(&mut self) -> Option<(&TokenTree, &TokenTree)> {
+        self.buf.peek2(&mut self.it)
     }
 
     /// Bump the last token.
     pub fn bump(&mut self) -> Option<TokenTree> {
-        if let Some(head) = self.buf.get_mut(self.tail % BUF).and_then(|s| s.take()) {
-            self.tail += 1;
+        if let Some(head) = self.buf.next() {
             return Some(head);
         }
 
@@ -82,8 +176,61 @@ impl Parser {
         }
     }
 
+    /// Process a punctuation.
+    pub fn peek_punct(&mut self) -> Option<Punct> {
+        let mut out = [None; 2];
+
+        for (n, o) in out.iter_mut().enumerate() {
+            match (n, self.nth(n)) {
+                (_, Some(TokenTree::Punct(punct))) => {
+                    *o = Some((punct.span(), punct.as_char()));
+
+                    if !matches!(punct.spacing(), Spacing::Joint) {
+                        break;
+                    }
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+
+        match out {
+            [Some((span, head)), tail] => Some(Punct {
+                span,
+                chars: [head, tail.map(|(_, c)| c).unwrap_or('\0')],
+            }),
+            _ => None,
+        }
+    }
+
+    /// Skip the specified punctuations and return a boolean indicating if it was skipped.
+    pub fn skip_punct(&mut self, expected: [char; 2]) -> bool {
+        if let Some(p) = self.peek_punct() {
+            if p.chars == expected {
+                self.step(p.len());
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Convert the current parser into a collection of tokens it has retained.
     pub fn into_tokens(self) -> Vec<TokenTree> {
         self.tokens
+    }
+}
+
+/// A complete punctuation.
+#[derive(Debug)]
+pub struct Punct {
+    pub span: Span,
+    pub chars: [char; 2],
+}
+
+impl Punct {
+    pub fn len(&self) -> usize {
+        self.chars.iter().take_while(|c| **c != '\0').count()
     }
 }

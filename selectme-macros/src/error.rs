@@ -1,3 +1,4 @@
+use core::fmt;
 use core::iter::once;
 
 use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenTree};
@@ -9,12 +10,15 @@ use crate::token_stream::TokenStream;
 #[derive(Debug)]
 pub struct Error {
     span: Span,
-    message: &'static str,
+    message: Box<str>,
 }
 
 impl Error {
-    pub(crate) fn new(span: Span, message: &'static str) -> Self {
-        Self { span, message }
+    pub(crate) fn new(span: Span, message: impl fmt::Display) -> Self {
+        Self {
+            span,
+            message: message.to_string().into(),
+        }
     }
 }
 
@@ -25,7 +29,7 @@ impl ToTokens for Error {
         exclamation.set_span(self.span);
         stream.push(TokenTree::Punct(exclamation));
 
-        let mut message = Literal::string(self.message);
+        let mut message = Literal::string(self.message.as_ref());
         message.set_span(self.span);
 
         let message = proc_macro::TokenStream::from_iter(once(TokenTree::Literal(message)));

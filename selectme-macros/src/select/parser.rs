@@ -1,9 +1,10 @@
 use core::ops;
 
-use proc_macro::{Delimiter, Ident, Spacing, Span, TokenTree};
+use proc_macro::{Delimiter, Ident, Span, TokenTree};
 
 use crate::error::Error;
-use crate::parsing;
+use crate::parsing::{BaseParser, Buf, Punct};
+use crate::parsing::{COMMA, EQ, ROCKET};
 use crate::select::output::Output;
 
 enum Segment {
@@ -16,26 +17,25 @@ pub enum Block {
     Expr(ops::Range<usize>),
 }
 
-// Punctuations that we look for.
-const COMMA: [char; 2] = [',', '\0'];
-const EQ: [char; 2] = ['=', '\0'];
-const ROCKET: [char; 2] = ['=', '>'];
-
-/// A parser for the `select!` macro.
-pub struct Parser {
-    base: parsing::Parser,
-    errors: Vec<Error>,
-    // Re-usable string buffer.
-    string_buf: String,
+impl Block {
+    /// Indicate if this block is an expression or not.
+    pub fn is_expr(&self) -> bool {
+        matches!(self, Block::Expr(..))
+    }
 }
 
-impl Parser {
+/// A parser for the `select!` macro.
+pub struct Parser<'a> {
+    base: BaseParser<'a>,
+    errors: Vec<Error>,
+}
+
+impl<'a> Parser<'a> {
     /// Construct a new parser around the given token stream.
-    pub(crate) fn new(stream: proc_macro::TokenStream) -> Self {
+    pub(crate) fn new(stream: proc_macro::TokenStream, buf: &'a mut Buf) -> Self {
         Self {
-            base: parsing::Parser::new(stream),
+            base: BaseParser::new(stream, buf),
             errors: Vec::new(),
-            string_buf: String::new(),
         }
     }
 
@@ -43,29 +43,59 @@ impl Parser {
     pub(crate) fn parse(mut self) -> Result<Output, Vec<Error>> {
         let mut branches = Vec::new();
         let mut else_branch = None;
-        let mut n = 0;
+        let mut index = 0;
 
         if let Err(span) = self.parse_until_reserved(COMMA) {
             self.errors.push(Error::new(span, "expected `,`"));
             return Err(self.errors);
         }
 
+        let mut _biased = false;
+
+        // Parse options.
+        while matches!(self.base.peek2(), Some((TokenTree::Ident(..), TokenTree::Punct(p))) if p.as_char() == ';')
+        {
+            match self.base.bump() {
+                Some(TokenTree::Ident(ident))
+                    if self.base.buf.display_as_str(&ident) == "biased" =>
+                {
+                    _biased = true;
+                    let _ = self.base.bump();
+                }
+                tt => {
+                    let span = tt.map(|tt| tt.span()).unwrap_or_else(Span::call_site);
+                    self.errors.push(Error::new(span, "unsupported option"));
+                }
+            }
+        }
+
         let krate = 0..self.base.len();
 
         while self.base.nth(0).is_some() {
-            if let Some(segment) = self.parse_segment(n) {
+            let mut is_expr = false;
+
+            if let Some(segment) = self.parse_segment(index) {
                 match segment {
                     Segment::Branch(b) => {
+                        is_expr = b.block.is_expr();
                         branches.push(b);
                     }
                     Segment::Else(e) => {
+                        is_expr = e.block.is_expr();
                         else_branch = Some(e);
                     }
                 }
             }
 
-            self.skip_punct(COMMA);
-            n += 1;
+            if !self.base.skip_punct(COMMA) && is_expr {
+                break;
+            }
+
+            index += 1;
+        }
+
+        if let Some(tt) = self.base.nth(0) {
+            self.errors.push(Error::new(tt.span(), "trailing token"));
         }
 
         if !self.errors.is_empty() {
@@ -83,15 +113,6 @@ impl Parser {
             branches,
             else_branch,
         ))
-    }
-
-    /// Skip one of the specified punctuations.
-    fn skip_punct(&mut self, expected: [char; 2]) {
-        if let Some(p) = self.peek_punct() {
-            if p.chars == expected {
-                self.base.step(p.len());
-            }
-        }
     }
 
     /// Parse a condition up until the `=>` token. Implements basic error
@@ -124,7 +145,7 @@ impl Parser {
         let start = self.base.len();
 
         loop {
-            match self.peek_punct() {
+            match self.base.peek_punct() {
                 Some(p @ Punct { chars: ROCKET, .. }) => {
                     self.base.step(p.len());
                     return Some((start..self.base.len(), None));
@@ -133,7 +154,9 @@ impl Parser {
                     self.base.step(p.len());
 
                     let span = match self.base.bump() {
-                        Some(TokenTree::Ident(ident)) if self.is_ident(&ident, "if") => {
+                        Some(TokenTree::Ident(ident))
+                            if self.base.buf.display_as_str(&ident) == "if" =>
+                        {
                             let (expr, len) = self.parse_condition(ident)?;
                             return Some((start..expr, Some(expr..len)));
                         }
@@ -152,7 +175,7 @@ impl Parser {
             }
 
             match self.base.bump() {
-                Some(TokenTree::Ident(ident)) if self.is_ident(&ident, "if") => {
+                Some(TokenTree::Ident(ident)) if self.base.buf.display_as_str(&ident) == "if" => {
                     let (expr, len) = self.parse_condition(ident)?;
                     return Some((start..expr, Some(expr..len)));
                 }
@@ -197,15 +220,6 @@ impl Parser {
         }
     }
 
-    /// Test if the given ident matches the condition.
-    fn is_ident(&mut self, ident: &Ident, m: &str) -> bool {
-        use std::fmt::Write;
-
-        self.string_buf.clear();
-        let _ = write!(&mut self.string_buf, "{}", ident);
-        self.string_buf.as_str() == m
-    }
-
     /// Test if the given punctuation is reserved.
     fn is_reserved_punct(&mut self, p: &Punct) -> bool {
         matches!(
@@ -217,25 +231,11 @@ impl Parser {
         )
     }
 
-    /// Test if the given [TokenTree] represented a reserved identifier.
-    fn is_reserved_ident(&mut self, tt: &TokenTree) -> bool {
-        use std::fmt::Write;
-
-        if let TokenTree::Ident(ident) = tt {
-            self.string_buf.clear();
-            let _ = write!(&mut self.string_buf, "{}", ident);
-            return matches!(self.string_buf.as_str(), "if" | "else");
-        }
-
-        false
-    }
-
     /// Parse until the given token or EOF.
     fn parse_until_eof(&mut self, expected: [char; 2]) {
         loop {
-            match self.peek_punct() {
+            match self.base.peek_punct() {
                 Some(p) if p.chars == expected => {
-                    self.base.step(p.len());
                     return;
                 }
                 _ => {}
@@ -254,7 +254,7 @@ impl Parser {
     /// error.
     fn parse_until_reserved(&mut self, expected: [char; 2]) -> Result<(), Span> {
         loop {
-            match self.peek_punct() {
+            match self.base.peek_punct() {
                 Some(p) if p.chars == expected => {
                     self.base.step(p.len());
                     return Ok(());
@@ -267,7 +267,11 @@ impl Parser {
             }
 
             if let Some(tt) = self.base.bump() {
-                if self.is_reserved_ident(&tt) {
+                if self
+                    .base
+                    .buf
+                    .ident_matches(&tt, |ident| matches!(ident, "if" | "else"))
+                {
                     return Err(tt.span());
                 }
 
@@ -285,7 +289,7 @@ impl Parser {
 
     /// Parse an else block.
     fn parse_else(&mut self) -> Option<Else> {
-        let span = match self.peek_punct() {
+        let span = match self.base.peek_punct() {
             Some(p @ Punct { chars: ROCKET, .. }) => {
                 self.base.step(p.len());
                 let block = self.parse_block()?;
@@ -343,34 +347,6 @@ impl Parser {
         };
 
         Some(Segment::Branch(branch))
-    }
-
-    /// Process a punctuation.
-    fn peek_punct(&mut self) -> Option<Punct> {
-        let mut out = [None; 2];
-
-        for (n, o) in out.iter_mut().enumerate() {
-            match (n, self.base.nth(n)) {
-                (_, Some(TokenTree::Punct(punct))) => {
-                    *o = Some((punct.span(), punct.as_char()));
-
-                    if !matches!(punct.spacing(), Spacing::Joint) {
-                        break;
-                    }
-                }
-                _ => {
-                    break;
-                }
-            }
-        }
-
-        match out {
-            [Some((span, head)), tail] => Some(Punct {
-                span,
-                chars: [head, tail.map(|(_, c)| c).unwrap_or('\0')],
-            }),
-            _ => None,
-        }
     }
 
     /// Parse the next group.
@@ -431,17 +407,4 @@ pub struct Branch {
 pub struct Else {
     /// Range for the branch.
     pub block: Block,
-}
-
-/// A complete punctuation.
-#[derive(Debug)]
-struct Punct {
-    span: Span,
-    chars: [char; 2],
-}
-
-impl Punct {
-    fn len(&self) -> usize {
-        self.chars.iter().take_while(|c| **c != '\0').count()
-    }
 }
