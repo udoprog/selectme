@@ -11,10 +11,17 @@ use crate::tok::{self, S};
 /// The name of the output enum.
 const OUT: &str = "Out";
 /// The private module in use.
-const PRIVATE: &str = "__private";
+const PRIVATE: &str = "private";
+// Note the lack of convoluted naming. These are not visible in the
+// corresponding branch scopes.
+const MAYBE_FUT: &str = "maybe_fut";
+const FUT: &str = "fut";
+const CX: &str = "cx";
+const STATE: &str = "state";
+const MASK: &str = "mask";
 
 fn scoped_call(inner: impl ToTokens) -> impl ToTokens {
-    (parens((tok::piped(()), inner)), parens(()))
+    (parens(("move", tok::piped(()), inner)), parens(()))
 }
 
 /// Expansion mode.
@@ -116,24 +123,24 @@ impl Output {
                     "unsafe",
                     braced((
                         ("Pin", S, "map_unchecked_mut"),
-                        parens(("state", ',', tok::piped("f"), '&', "mut", "f", '.', b.index)),
+                        parens((STATE, ',', tok::piped("f"), '&', "mut", "f", '.', b.index)),
                     )),
                 );
 
                 if b.condition.is_some() {
-                    let assign = ("let", "mut", "__maybe_fut", '=', fut, ';');
-                    let poll = self.poll_body(b, Some("__maybe_fut"), mode);
+                    let assign = ("let", "mut", MAYBE_FUT, '=', fut, ';');
+                    let poll = self.poll_body(b, Some(MAYBE_FUT), mode);
 
                     let poll = (
-                        ("if", "let", tok::option_some("__fut"), '='),
+                        ("if", "let", tok::option_some(FUT), '='),
                         ("Option", S, "as_pin_mut"),
-                        parens(tok::pin_as_mut("__maybe_fut")),
+                        parens(tok::pin_as_mut(MAYBE_FUT)),
                         braced(poll),
                     );
 
                     s.write(braced((assign, poll)));
                 } else {
-                    let assign = ("let", "__fut", '=', fut, ';');
+                    let assign = ("let", FUT, '=', fut, ';');
                     let poll = self.poll_body(b, None, mode);
                     s.write(braced((assign, poll)));
                 }
@@ -230,7 +237,7 @@ impl Output {
         unset: Option<&'a str>,
         mode: Mode,
     ) -> impl ToTokens + 'a {
-        let future_poll = ("Future", S, "poll", parens(("__fut", ',', "cx")));
+        let future_poll = ("Future", S, "poll", parens((FUT, ',', CX)));
 
         (
             ("if", "let", tok::poll_ready("out"), '='),
@@ -238,7 +245,7 @@ impl Output {
             braced((
                 unset.map(|var| (var, '.', "set", parens(tok::OPTION_NONE), ';')),
                 // Unset the current branch in the mask, since it completed.
-                ("mask", '.', "clear", parens(b.index), ';'),
+                (MASK, '.', "clear", parens(b.index), ';'),
                 self.match_branch(b, mode),
             )),
         )
@@ -308,7 +315,7 @@ impl Output {
         let fallback = ("Poll", S, "Pending");
 
         let poll_body = (
-            tok::piped(("cx", ',', "state", ',', "mask", ',', "index")),
+            tok::piped((CX, ',', STATE, ',', MASK, ',', "index")),
             braced((match_body, fallback)),
         );
 
