@@ -13,6 +13,10 @@ const OUT: &str = "Out";
 /// The private module in use.
 const PRIVATE: &str = "__private";
 
+fn scoped_call(inner: impl ToTokens) -> impl ToTokens {
+    (parens((tok::piped(()), inner)), parens(()))
+}
+
 /// Expansion mode.
 #[derive(Debug, Clone, Copy)]
 enum Mode {
@@ -180,7 +184,11 @@ impl Output {
                     pat,
                     '=',
                     "out",
-                    braced(("return", tok::poll_ready(self.block(&b.block)), ';')),
+                    braced((
+                        "return",
+                        tok::poll_ready(scoped_call(self.block(&b.block))),
+                        ';',
+                    )),
                 ));
             }
         })
