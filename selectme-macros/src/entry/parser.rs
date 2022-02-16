@@ -1,7 +1,8 @@
-use proc_macro::{Delimiter, Literal, Span, TokenTree};
+use proc_macro::{Delimiter, Group, Literal, Span, TokenTree};
 
-use crate::entry::output::RuntimeFlavor;
-use crate::entry::output::{Config, EntryKind, ItemOutput, SupportsThreading};
+use crate::entry::output::{
+    Config, EntryKind, ItemOutput, RuntimeFlavor, SupportsThreading, TailState,
+};
 use crate::error::Error;
 use crate::parsing::{BaseParser, Buf};
 use crate::parsing::{Punct, COMMA, EQ};
@@ -180,6 +181,8 @@ impl<'a> ItemParser<'a> {
 
         let mut has_async = false;
 
+        let mut tail_state = TailState::default();
+
         while let Some(tt) = self.base.bump() {
             match tt {
                 TokenTree::Ident(ident) if self.base.buf.display_as_str(&ident) == "async" => {
@@ -189,6 +192,8 @@ impl<'a> ItemParser<'a> {
                 TokenTree::Group(g) if matches!(g.delimiter(), Delimiter::Brace) => {
                     signature = Some(start..self.base.len());
                     let start = self.base.len();
+                    tail_state.block = Some(g.span());
+                    self.find_last_stmt_range(&g, &mut tail_state);
                     self.base.push(TokenTree::Group(g));
                     block = Some(start..self.base.len());
                 }
@@ -198,6 +203,37 @@ impl<'a> ItemParser<'a> {
             }
         }
 
-        ItemOutput::new(self.base.into_tokens(), has_async, signature, block)
+        let tokens = self.base.into_tokens();
+
+        ItemOutput::new(tokens, has_async, signature, block, tail_state)
     }
+
+    /// Find the range of spans that is defined by the last statement in the
+    /// block so that they can be used for the generated expression.
+    ///
+    /// This in turn improves upon diagnostics when return types do not match.
+    #[cfg(feature = "tokio-diagnostics")]
+    pub fn find_last_stmt_range(&mut self, g: &Group, tail_state: &mut TailState) {
+        let mut update = true;
+
+        for tt in g.stream() {
+            let span = tt.span();
+            tail_state.end = Some(span);
+
+            match tt {
+                TokenTree::Punct(p) if p.as_char() == ';' => {
+                    update = true;
+                }
+                tt => {
+                    if std::mem::take(&mut update) {
+                        tail_state.return_ = matches!(&tt, TokenTree::Ident(ident) if self.base.buf.display_as_str(ident) == "return");
+                        tail_state.start = Some(span);
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(not(feature = "tokio-diagnostics"))]
+    pub fn find_last_stmt_range(&self, _: &Group, _: &mut TailState) {}
 }

@@ -39,10 +39,7 @@ pub(crate) fn build(
 
     let mut stream = TokenStream::default();
 
-    let fallback_span = item.find_block_span().unwrap_or_else(Span::call_site);
-    let (start, end) = item
-        .find_last_stmt_range()
-        .unwrap_or_else(|| (fallback_span, fallback_span));
+    let (start, end) = item.block_spans();
 
     item.expand_item(kind, config, start)
         .to_tokens(&mut stream, end);
