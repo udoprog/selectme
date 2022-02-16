@@ -7,10 +7,49 @@ use crate::set::Set;
 /// Index which indicates that all branches have been disabled.
 pub const DISABLED: u32 = u32::MAX;
 
-/// The implementation used by the [select!][crate::select!] and
-/// [inline!][crate::inline!] macro (unless the `static;` option is enabled).
+/// This is the type produced by the [inline!][crate::inline!] macro unless the
+/// `static;` option is enabled.
 ///
-/// See the [select!][crate::select!] macro for documentation on syntax.
+/// Note that second type parameter `T` in the [Select] type cannot be named. If
+/// you want to embed a selection inside of another type have a look at
+/// [StaticSelect][crate::StaticSelect].
+///
+/// See the [select!][crate::select!] and [inline!][crate::inline!] macros for
+/// documentation on syntax and use.
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use selectme::Select;
+/// use tokio::time;
+///
+/// # #[tokio::main] pub async fn main() {
+/// let s1 = time::sleep(Duration::from_millis(100));
+/// let s2 = time::sleep(Duration::from_millis(200));
+///
+/// let mut inlined_var = false;
+///
+/// let output: Select<_, _> = selectme::inline! {
+///     () = s1 => {
+///         inlined_var = true;
+///         Some(1)
+///     }
+///     _ = s2 => Some(2),
+///     else => None,
+/// };
+///
+/// tokio::pin!(output);
+///
+/// while let Some(output) = output.as_mut().next().await {
+///     dbg!(output);
+/// }
+///
+/// dbg!(inlined_var);
+/// # }
+/// ```
+
 pub struct Select<S, T> {
     snapshot: Set,
     state: S,

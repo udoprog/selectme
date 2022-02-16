@@ -12,6 +12,54 @@ type StaticPoll<S, O> = fn(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll
 /// The implementation used by the [select!][crate::select!] macro internally
 /// and returned by the [inline!][crate::inline!] macro when the `static;`
 /// option is enabled.
+///
+/// See the [select!][crate::select!] and [inline!][crate::inline!] macros for
+/// documentation on syntax and use.
+///
+/// # Examples
+///
+/// ```
+/// use std::future::Future;
+/// use std::pin::Pin;
+/// use std::task::{Context, Poll};
+/// use std::time::Duration;
+///
+/// use pin_project::pin_project;
+/// use selectme::StaticSelect;
+/// use tokio::time::{self, Sleep};
+///
+/// #[pin_project]
+/// struct MyFuture {
+///     #[pin]
+///     select: StaticSelect<(Sleep, Sleep), Option<u32>>,
+/// }
+///
+/// impl Future for MyFuture {
+///     type Output = Option<u32>;
+///
+///     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+///         let this = self.project();
+///         this.select.poll_next(cx)
+///     }
+/// }
+///
+/// # #[tokio::main] pub async fn main() {
+/// let s1 = time::sleep(Duration::from_millis(100));
+/// let s2 = time::sleep(Duration::from_millis(200));
+///
+/// let my_future = MyFuture {
+///     select: selectme::inline! {
+///         static;
+///
+///         () = s1 => Some(1),
+///         _ = s2 => Some(2),
+///         else => None,
+///     }
+/// };
+///
+/// assert_eq!(my_future.await, Some(1));
+/// # }
+/// ```
 pub struct StaticSelect<S, O> {
     snapshot: Set,
     state: S,
