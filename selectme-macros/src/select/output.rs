@@ -20,15 +20,17 @@ const CX: &str = "cx";
 const STATE: &str = "state";
 const MASK: &str = "mask";
 
-fn scoped_call(inner: impl ToTokens) -> impl ToTokens {
-    (parens(("move", tok::piped(()), inner)), parens(()))
-}
-
 /// Expansion mode.
 #[derive(Debug, Clone, Copy)]
 enum Mode {
     Default,
     Inline,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SelectKind {
+    Select,
+    StaticSelect,
 }
 
 /// The parsed output.
@@ -37,6 +39,9 @@ pub struct Output {
     krate: ops::Range<usize>,
     branches: Vec<Branch>,
     else_branch: Option<Else>,
+    #[allow(unused)]
+    biased: bool,
+    select_kind: SelectKind,
 }
 
 impl Output {
@@ -46,12 +51,16 @@ impl Output {
         krate: ops::Range<usize>,
         branches: Vec<Branch>,
         else_branch: Option<Else>,
+        biased: bool,
+        select_kind: SelectKind,
     ) -> Self {
         Self {
             tokens,
             krate,
             branches,
             else_branch,
+            biased,
+            select_kind,
         }
     }
 
@@ -191,11 +200,7 @@ impl Output {
                     pat,
                     '=',
                     "out",
-                    braced((
-                        "return",
-                        tok::poll_ready(scoped_call(self.block(&b.block))),
-                        ';',
-                    )),
+                    braced(("return", tok::poll_ready(self.block(&b.block)), ';')),
                 ));
             }
         })
@@ -321,7 +326,14 @@ impl Output {
 
         (
             self.support(),
-            "select",
+            match (mode, self.select_kind) {
+                // Default mode doesn't require anything to be captured, since
+                // the branches are evaluated outside of the poller
+                // implementation. While this will probably be optimized out
+                // *anyways* we can instead use a `static_select` ahead of time.
+                (Mode::Default, _) | (_, SelectKind::StaticSelect) => "static_select",
+                _ => "select",
+            },
             parens((
                 self.mask_expr(reset_base),
                 ',',

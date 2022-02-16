@@ -5,7 +5,7 @@ use proc_macro::{Delimiter, Ident, Span, TokenTree};
 use crate::error::Error;
 use crate::parsing::{BaseParser, Buf, Punct};
 use crate::parsing::{COMMA, EQ, ROCKET};
-use crate::select::output::Output;
+use crate::select::output::{Output, SelectKind};
 
 enum Segment {
     Branch(Branch),
@@ -50,23 +50,47 @@ impl<'a> Parser<'a> {
             return Err(self.errors);
         }
 
-        let mut _biased = false;
+        let mut biased = false;
+        let mut select_kind = None::<(Span, SelectKind)>;
 
         // Parse options.
         while matches!(self.base.peek2(), Some((TokenTree::Ident(..), TokenTree::Punct(p))) if p.as_char() == ';')
         {
             match self.base.bump() {
-                Some(TokenTree::Ident(ident))
-                    if self.base.buf.display_as_str(&ident) == "biased" =>
-                {
-                    _biased = true;
-                    let _ = self.base.bump();
-                }
+                Some(TokenTree::Ident(ident)) => match self.base.buf.display_as_str(&ident) {
+                    "biased" => {
+                        biased = true;
+                    }
+                    "static" => {
+                        if let Some((span, _)) = &select_kind {
+                            self.errors.push(Error::new(
+                                ident.span(),
+                                "option `static` should only be specified once",
+                            ));
+
+                            self.errors.push(Error::new(
+                                span.clone(),
+                                "option `static` previously specified here",
+                            ));
+                        } else {
+                            select_kind = Some((ident.span(), SelectKind::StaticSelect));
+                        }
+                    }
+                    other => {
+                        self.errors.push(Error::new(
+                            ident.span(),
+                            format!("unsupported option `{}`", other),
+                        ));
+                    }
+                },
                 tt => {
                     let span = tt.map(|tt| tt.span()).unwrap_or_else(Span::call_site);
-                    self.errors.push(Error::new(span, "unsupported option"));
+                    self.errors
+                        .push(Error::new(span, "expected identifier as option"));
                 }
             }
+
+            let _ = self.base.bump();
         }
 
         let krate = 0..self.base.len();
@@ -112,6 +136,10 @@ impl<'a> Parser<'a> {
             krate,
             branches,
             else_branch,
+            biased,
+            select_kind
+                .map(|(_, kind)| kind)
+                .unwrap_or(SelectKind::Select),
         ))
     }
 

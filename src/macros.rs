@@ -365,7 +365,7 @@ macro_rules! select {
 ///
 /// let mut values = Vec::new();
 ///
-/// while let Some(output) = output.as_mut().next_pinned().await {
+/// while let Some(output) = output.as_mut().next().await {
 ///     values.push(output);
 /// }
 ///

@@ -2,21 +2,23 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
+use crate::select::DISABLED;
 use crate::set::Set;
 
-/// Index which indicates that all branches have been disabled.
-pub const DISABLED: u32 = u32::MAX;
+/// The type of a static poller function. This is produced when
+/// [inline!][crate::inline!] is used with the `static` option.
+type StaticPoll<S, O> = fn(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>;
 
 /// The implementation used by the [select!][crate::select!] macro internally
 /// and returned by the [inline!][crate::inline!] macro.
-pub struct Select<S, T> {
+pub struct StaticSelect<S, O> {
     snapshot: Set,
     state: S,
-    poll: T,
+    poll: StaticPoll<S, O>,
 }
 
-impl<S, T> Select<S, T> {
-    pub(crate) fn new(snapshot: Set, state: S, poll: T) -> Self {
+impl<S, O> StaticSelect<S, O> {
+    pub(crate) fn new(snapshot: Set, state: S, poll: StaticPoll<S, O>) -> Self {
         Self {
             snapshot,
             state,
@@ -25,10 +27,7 @@ impl<S, T> Select<S, T> {
     }
 }
 
-impl<S, T, O> Select<S, T>
-where
-    T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
-{
+impl<S, O> StaticSelect<S, O> {
     /// Get the next element from this select when pinned.
     ///
     /// # Examples
@@ -44,6 +43,8 @@ where
     ///     let s2 = time::sleep(Duration::from_millis(200));
     ///
     ///     let output = selectme::inline! {
+    ///         static;
+    ///
     ///         () = s1 => Some(1),
     ///         _ = s2 => Some(2),
     ///         else => None,
@@ -64,9 +65,9 @@ where
         Next { this: self }.await
     }
 
-    /// Poll for the next branch to resolve in this [Select].
+    /// Poll for the next branch to resolve in this [StaticSelect].
     pub fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<O> {
-        // SAFETY: Select is safely pinned.
+        // SAFETY: StaticSelect is safely pinned.
         unsafe {
             let this = Pin::get_unchecked_mut(self);
             let mut state = Pin::new_unchecked(&mut this.state);
@@ -91,10 +92,7 @@ where
     }
 }
 
-impl<S, T, O> Future for Select<S, T>
-where
-    T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
-{
+impl<S, O> Future for StaticSelect<S, O> {
     type Output = O;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -102,14 +100,11 @@ where
     }
 }
 
-struct Next<'a, S, T> {
-    this: Pin<&'a mut Select<S, T>>,
+struct Next<'a, S, O> {
+    this: Pin<&'a mut StaticSelect<S, O>>,
 }
 
-impl<S, T, O> Future for Next<'_, S, T>
-where
-    T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
-{
+impl<S, O> Future for Next<'_, S, O> {
     type Output = O;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

@@ -62,6 +62,9 @@
 mod select;
 pub use crate::select::Select;
 
+mod static_select;
+pub use crate::static_select::StaticSelect;
+
 mod set;
 
 #[macro_use]
@@ -83,13 +86,24 @@ pub mod __support {
 
     use crate::select::Select;
     use crate::set::Set;
+    use crate::static_select::StaticSelect;
 
-    /// Perform a poll with the initial mask.
+    /// Setup a [Select] with a dynamic function used to poll.
     #[inline]
-    pub fn select<T, S, O>(mask: u64, state: S, poll: T) -> Select<T, S>
+    pub fn select<S, T, O>(mask: u64, state: S, poll: T) -> Select<S, T>
     where
         T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
     {
         Select::new(Set::new(mask), state, poll)
+    }
+
+    /// Setup a [Select] with a static function used to poll.
+    #[inline]
+    pub fn static_select<S, O>(
+        mask: u64,
+        state: S,
+        poll: fn(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
+    ) -> StaticSelect<S, O> {
+        StaticSelect::new(Set::new(mask), state, poll)
     }
 }
