@@ -115,6 +115,7 @@ pub(crate) struct ItemOutput {
     fn_name: Option<usize>,
     signature: Option<ops::Range<usize>>,
     block: Option<usize>,
+    non_empty_args: Option<Span>,
 }
 
 impl ItemOutput {
@@ -124,6 +125,7 @@ impl ItemOutput {
         fn_name: Option<usize>,
         signature: Option<ops::Range<usize>>,
         block: Option<usize>,
+        non_empty_args: Option<Span>,
     ) -> Self {
         Self {
             tokens,
@@ -131,6 +133,7 @@ impl ItemOutput {
             fn_name,
             signature,
             block,
+            non_empty_args,
         }
     }
 
@@ -149,6 +152,16 @@ impl ItemOutput {
                 format!("functions marked with `#[{}]` must be `async`", kind.name()),
             ));
         }
+
+        if let Some(span) = self.non_empty_args {
+            errors.push(Error::new(
+                span,
+                format!(
+                    "functions marked with `#[{}]` must not take any arguments",
+                    kind.name()
+                ),
+            ));
+        }
     }
 
     pub(crate) fn block_span(&self) -> Option<Span> {
@@ -159,6 +172,11 @@ impl ItemOutput {
     /// Expand into a function item.
     pub(crate) fn expand_item(self, kind: EntryKind, config: Config) -> impl IntoTokens {
         from_fn(move |s| {
+            if self.non_empty_args.is_some() {
+                s.write(&self.tokens[..]);
+                return;
+            }
+
             if let Some(item) = self.expand_if_present(kind, config) {
                 s.write(item);
             } else if let Some(index) = self.async_keyword {

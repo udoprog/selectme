@@ -1,0 +1,23 @@
+error: functions marked with `#[selectme::main]` must be `async`
+ --> tests/ui/entry_arguments_fail.rs:4:1
+  |
+4 | fn main_with_argument(value: u32) {}
+  | ^^
+
+error: functions marked with `#[selectme::main]` must not take any arguments
+ --> tests/ui/entry_arguments_fail.rs:4:22
+  |
+4 | fn main_with_argument(value: u32) {}
+  |                      ^^^^^^^^^^^^
+
+error: functions marked with `#[selectme::main]` must be `async`
+ --> tests/ui/entry_arguments_fail.rs:7:1
+  |
+7 | pub(crate) fn non_empty_pub_crate(value: u32) {}
+  | ^^^
+
+error: functions marked with `#[selectme::main]` must not take any arguments
+ --> tests/ui/entry_arguments_fail.rs:7:34
+  |
+7 | pub(crate) fn non_empty_pub_crate(value: u32) {}
+  |                                  ^^^^^^^^^^^^

@@ -198,6 +198,8 @@ impl<'a> ItemParser<'a> {
         let mut async_keyword = None;
         let mut fn_name = None;
         let mut next_is_name = false;
+        let mut has_args = false;
+        let mut non_empty_args = None;
 
         while let Some(tt) = self.base.bump() {
             match tt {
@@ -222,9 +224,22 @@ impl<'a> ItemParser<'a> {
 
                     self.base.push(TokenTree::Ident(ident));
                 }
-                TokenTree::Group(g) if matches!(g.delimiter(), Delimiter::Brace) => {
-                    signature = Some(start..self.base.len());
-                    block = Some(self.base.len());
+                TokenTree::Group(g) => {
+                    match g.delimiter() {
+                        Delimiter::Parenthesis if !has_args && fn_name.is_some() => {
+                            has_args = true;
+
+                            if !g.stream().is_empty() {
+                                non_empty_args = Some(g.span());
+                            }
+                        }
+                        Delimiter::Brace if block.is_none() => {
+                            signature = Some(start..self.base.len());
+                            block = Some(self.base.len());
+                        }
+                        _ => {}
+                    }
+
                     self.base.push(TokenTree::Group(g));
                 }
                 tt => {
@@ -233,7 +248,15 @@ impl<'a> ItemParser<'a> {
             }
         }
 
-        let tokens = self.base.ininto_tokens();
-        ItemOutput::new(tokens, async_keyword, fn_name, signature, block)
+        let tokens = self.base.into_tokens();
+
+        ItemOutput::new(
+            tokens,
+            async_keyword,
+            fn_name,
+            signature,
+            block,
+            non_empty_args,
+        )
     }
 }
