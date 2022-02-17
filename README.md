@@ -16,7 +16,7 @@ See the [select!] or [inline!] macros for documentation.
 Add the following to your `Cargo.toml`:
 
 ```toml
-selectme = "0.5.0"
+selectme = "0.6.0"
 ```
 
 <br>
@@ -99,7 +99,7 @@ use tokio::time::{self, Sleep};
 #[pin_project]
 struct MyFuture {
     #[pin]
-    select: StaticSelect<(Sleep, Sleep), Random, Option<u32>>,
+    select: StaticSelect<u8, (Sleep, Sleep), Random, Option<u32>>,
 }
 
 impl Future for MyFuture {
