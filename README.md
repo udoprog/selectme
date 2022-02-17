@@ -47,6 +47,23 @@ selectme::select! {
 
 <br>
 
+### Entrypoint macros
+
+This crate provides entrypoint attributes which are compatible with the ones
+provided by Tokio through [`#[selectme::main]`][selectme-main] and
+[`#[selectme::test]`][selectme-test] with one exception. They do not check
+(because they cannot) which Tokio features are enabled and simply assumes
+that you want to build a multithreaded runtime unless `flavor` is specified.
+
+So why does this project provide entrypoint macros? Well, there's [a handful
+of issues related to performance and ergonomics][tokio-entrypoints-pr] which
+turns out to be quite hard to fix in Tokio proper since backwards
+compatibility needs to be maintained. So until a Tokio `2.x` is released and
+we can bake another breaking release. Until such a time, you can find those
+macros here.
+
+<br>
+
 ## The `inline!` macro
 
 The [inline!] macro provides an *inlined* variant of the [select!] macro.
@@ -127,9 +144,12 @@ let my_future = MyFuture {
 assert_eq!(my_future.await, Some(1));
 ```
 
-[select!]: https://docs.rs/selectme/latest/selectme/macro.select.html
 [inline!]: https://docs.rs/selectme/latest/selectme/macro.inline.html
+[select!]: https://docs.rs/selectme/latest/selectme/macro.select.html
 [Select]: https://docs.rs/selectme/latest/selectme/struct.Select.html
+[selectme-main]: https://docs.rs/selectme/latest/selectme/attr.main.html
+[selectme-test]: https://docs.rs/selectme/latest/selectme/attr.test.html
 [StaticSelect]: https://docs.rs/selectme/latest/selectme/struct.StaticSelect.html
+[tokio-entrypoints-pr]: https://github.com/tokio-rs/tokio/pull/4513
 
 License: MIT/Apache-2.0
