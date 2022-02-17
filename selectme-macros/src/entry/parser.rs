@@ -35,7 +35,10 @@ impl<'a> ConfigParser<'a> {
         let mut config = Config::new(kind, supports_threading);
 
         while self.base.nth(0).is_some() {
-            let _ = self.parse_option(&mut config);
+            if self.parse_option(&mut config).is_none() {
+                self.recover();
+                continue;
+            }
 
             if !self.base.skip_punct(COMMA) {
                 break;
@@ -49,6 +52,21 @@ impl<'a> ConfigParser<'a> {
         config
     }
 
+    /// Recover by parsing either to the next comma `,`, or end of input.
+    fn recover(&mut self) {
+        loop {
+            if let Some(p @ Punct { chars: COMMA, .. }) = self.base.peek_punct() {
+                self.base.step(p.len());
+                break;
+            }
+
+            if self.base.bump().is_none() {
+                break;
+            }
+        }
+    }
+
+    /// Parse a single option.
     fn parse_option(&mut self, config: &mut Config) -> Option<()> {
         match self.base.bump() {
             Some(TokenTree::Ident(ident)) => match self.base.buf.display_as_str(&ident) {
@@ -81,35 +99,35 @@ impl<'a> ConfigParser<'a> {
                     ) {
                         self.errors.push(Error::new(
                             ident.span(),
-                            "The runtime flavor `multi_thread` requires the `rt-multi-thread` feature",
+                            "the runtime flavor \"multi_thread\" requires the `rt-multi-thread` feature",
                         ));
                     }
 
                     if let Some((existing, _)) = &config.flavor {
                         self.errors.push(Error::new(
                             ident.span(),
-                            "`flavor` must only be defined once",
+                            "the `flavor` option must only be used once",
                         ));
-                        self.errors
-                            .push(Error::new(existing.clone(), "`flavor` first defined here"));
+                        self.errors.push(Error::new(
+                            existing.clone(),
+                            "first use of the `flavor` here",
+                        ));
                     }
 
                     config.flavor = Some((ident.span(), flavor));
                     Some(())
                 }
                 "core_threads" => {
-                    self.parse_eq()?;
-                    self.parse_literal()?;
                     self.errors.push(Error::new(
                         ident.span(),
-                        "Attribute `core_threads` is renamed to `worker_threads`",
+                        "the `core_threads` option is renamed to `worker_threads`",
                     ));
-                    None
-                }
-                _ => {
-                    self.errors.push(Error::new(ident.span(), "Unknown attribute specified; expected one of: `flavor`, `worker_threads`, `start_paused`"));
                     self.parse_eq()?;
                     self.parse_literal()?;
+                    None
+                }
+                name => {
+                    self.errors.push(Error::new(ident.span(), format!("unknown option `{}`, expected one of: `flavor`, `worker_threads`, `start_paused`", name)));
                     None
                 }
             },
@@ -153,7 +171,8 @@ impl<'a> ConfigParser<'a> {
                 Some(())
             }
             p => {
-                self.errors.push(Error::new(p.span, "expected `=`"));
+                self.errors
+                    .push(Error::new(p.span, "expected assignment `=`"));
                 None
             }
         }

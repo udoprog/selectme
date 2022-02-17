@@ -51,10 +51,10 @@ impl RuntimeFlavor {
         match s {
             "\"current_thread\"" => Ok(RuntimeFlavor::CurrentThread),
             "\"multi_thread\"" => Ok(RuntimeFlavor::Threaded),
-            "\"single_thread\"" => Err("The single threaded runtime flavor is called `current_thread`"),
-            "\"basic_scheduler\"" => Err("The `basic_scheduler` runtime flavor has been renamed to `current_thread`"),
-            "\"threaded_scheduler\"" => Err("The `threaded_scheduler` runtime flavor has been renamed to `multi_thread`"),
-            _ => Err("No such runtime flavor. The runtime flavors are `current_thread` and `multi_thread`"),
+            "\"single_thread\"" => Err("the single threaded runtime flavor is called \"current_thread\""),
+            "\"basic_scheduler\"" => Err("the \"basic_scheduler\" runtime flavor has been renamed to \"current_thread\""),
+            "\"threaded_scheduler\"" => Err("the \"threaded_scheduler\" runtime flavor has been renamed to \"multi_thread\""),
+            _ => Err("no such runtime flavor, the runtime flavors are: \"current_thread\", \"multi_thread\""),
         }
     }
 }
@@ -92,7 +92,7 @@ impl Config {
         match (self.flavor(), &self.start_paused) {
             (RuntimeFlavor::Threaded, Some(tt)) => {
                 if tt.to_string() == "true" {
-                    errors.push(Error::new(tt.span(), format!("The `start_paused` option requires the `current_thread` runtime flavor. Use `#[{}(flavor = \"current_thread\")]`", kind.name())));
+                    errors.push(Error::new(tt.span(), format!("the `start_paused` option requires the \"current_thread\" runtime flavor. Use `#[{}(flavor = \"current_thread\")]`", kind.name())));
                 }
             }
             _ => {}
@@ -100,7 +100,7 @@ impl Config {
 
         match (self.flavor(), &self.worker_threads) {
             (RuntimeFlavor::CurrentThread, Some(tt)) => {
-                errors.push(Error::new(tt.span(), format!("The `worker_threads` option requires the `multi_thread` runtime flavor. Use `#[{}(flavor = \"multi_thread\")]`", kind.name())));
+                errors.push(Error::new(tt.span(), format!("the `worker_threads` option requires the \"multi_thread\" runtime flavor. Use `#[{}(flavor = \"multi_thread\")]`", kind.name())));
             }
             _ => {}
         }
@@ -138,6 +138,24 @@ impl ItemOutput {
             signature,
             block,
             tail_state,
+        }
+    }
+
+    /// Validate the parsed item.
+    pub fn validate(&self, kind: EntryKind, errors: &mut Vec<Error>) {
+        if !self.has_async {
+            let span = self
+                .signature
+                .as_ref()
+                .and_then(|s| self.tokens.get(s.clone()))
+                .and_then(|t| t.first())
+                .map(|tt| tt.span())
+                .unwrap_or_else(Span::call_site);
+
+            errors.push(Error::new(
+                span,
+                format!("functions marked with `#[{}]` must be `async`", kind.name()),
+            ));
         }
     }
 

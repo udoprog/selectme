@@ -7,7 +7,6 @@ use crate::error::Error;
 use crate::parsing::Buf;
 use crate::to_tokens::{from_fn, ToTokens};
 use crate::token_stream::TokenStream;
-use proc_macro::Span;
 
 /// Configurable macro code to build entry.
 pub(crate) fn build(
@@ -27,15 +26,7 @@ pub(crate) fn build(
     let item = parser::ItemParser::new(item_stream.clone(), &mut buf);
     let item = item.parse();
 
-    if !item.has_async {
-        errors.push(Error::new(
-            Span::call_site(),
-            format!(
-                "function marked with `#[{}]` must be an `async` fn",
-                kind.name()
-            ),
-        ));
-    }
+    item.validate(kind, &mut errors);
 
     let mut stream = TokenStream::default();
 

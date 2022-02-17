@@ -132,7 +132,7 @@ impl<'a> Parser<'a> {
         }
 
         if branches.is_empty() && else_branch.is_none() {
-            self.errors.push(Error::new(Span::call_site(), "`select!` must not be empty, consider replacing with `future::pending::<()>().await` instead!"));
+            self.errors.push(Error::new(Span::call_site(), "`select!` must not be empty, consider replacing with `future::pending::<()>().await` instead"));
             return Err(self.errors);
         }
 
