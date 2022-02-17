@@ -20,7 +20,7 @@ async fn poller_test() {
 
             let mut __fut = (Some(s1.as_mut()), Some(s2.as_mut()));
 
-            let initial = if !s1_done { 1 } else { 0 } + if !s2_done { 2 } else { 0 };
+            let initial: u32 = if !s1_done { 1 } else { 0 } + if !s2_done { 2 } else { 0 };
 
             ::selectme::__support::select(
                 initial,

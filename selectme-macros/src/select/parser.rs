@@ -3,9 +3,8 @@ use core::ops;
 use proc_macro::{Delimiter, Ident, Span, TokenTree};
 
 use crate::error::Error;
-use crate::parsing::{BaseParser, Buf, Punct};
-use crate::parsing::{COMMA, EQ, ROCKET};
-use crate::select::output::{Mode, Output, SelectKind};
+use crate::parsing::{BaseParser, Buf, Punct, COMMA, EQ, ROCKET};
+use crate::select::output::{Mode, Output, SelectKind, BRANCH_LIMIT};
 
 enum Segment {
     Branch(Branch),
@@ -133,6 +132,17 @@ impl<'a> Parser<'a> {
 
         if branches.is_empty() && else_branch.is_none() {
             self.errors.push(Error::new(Span::call_site(), "`select!` must not be empty, consider replacing with `future::pending::<()>().await` instead"));
+            return Err(self.errors);
+        }
+
+        if branches.len() > BRANCH_LIMIT {
+            self.errors.push(Error::new(
+                Span::call_site(),
+                format!(
+                    "`select!` only supports up to BRANCH_LIMIT branches, you specified {}",
+                    branches.len()
+                ),
+            ));
             return Err(self.errors);
         }
 

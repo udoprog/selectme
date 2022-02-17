@@ -103,7 +103,7 @@
 //! #[pin_project]
 //! struct MyFuture {
 //!     #[pin]
-//!     select: StaticSelect<(Sleep, Sleep), Random, Option<u32>>,
+//!     select: StaticSelect<u8, (Sleep, Sleep), Random, Option<u32>>,
 //! }
 //!
 //! impl Future for MyFuture {
@@ -185,7 +185,7 @@ pub mod __support {
     use core::task::Context;
 
     use crate::select::Select;
-    use crate::set::Set;
+    use crate::set::{Number, Set};
     use crate::static_select::StaticSelect;
 
     /// Construct a random bias.
@@ -203,24 +203,26 @@ pub mod __support {
 
     /// Setup a [Select] with a dynamic function used to poll.
     #[inline]
-    pub fn select<S, B, T, O>(mask: u64, bias: B, state: S, poll: T) -> Select<S, B, T>
+    pub fn select<Bits, S, B, T, O>(mask: Bits, bias: B, state: S, poll: T) -> Select<Bits, S, B, T>
     where
-        B: Bias,
-        T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
+        Bits: Number,
+        B: Bias<Bits>,
+        T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set<Bits>, u32) -> Poll<O>,
     {
         Select::new(Set::new(mask), bias, state, poll)
     }
 
     /// Setup a [Select] with a static function used to poll.
     #[inline]
-    pub fn static_select<S, B, O>(
-        mask: u64,
+    pub fn static_select<Bits, S, B, O>(
+        mask: Bits,
         bias: B,
         state: S,
-        poll: fn(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
-    ) -> StaticSelect<S, B, O>
+        poll: fn(&mut Context<'_>, Pin<&mut S>, &mut Set<Bits>, u32) -> Poll<O>,
+    ) -> StaticSelect<Bits, S, B, O>
     where
-        B: Bias,
+        Bits: Number,
+        B: Bias<Bits>,
     {
         StaticSelect::new(Set::new(mask), bias, state, poll)
     }

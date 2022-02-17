@@ -1,13 +1,13 @@
-use crate::set::{Iter, Set};
+use crate::set::{Iter, Number, Set};
 
 /// Trait that implements bias in selection of branches.
-pub trait Bias {
+pub trait Bias<Bits> {
     /// The applied bias iterator.
     type Apply: Iterator<Item = u32>;
 
     /// Apply the bias to the given snapshot and construct an iterator over its
     /// items.
-    fn apply(&self, snapshot: Set) -> Self::Apply;
+    fn apply(&self, snapshot: Set<Bits>) -> Self::Apply;
 }
 
 /// An unbiased selector which starts from the top and works its way to the
@@ -15,10 +15,13 @@ pub trait Bias {
 #[non_exhaustive]
 pub struct Unbiased;
 
-impl Bias for Unbiased {
-    type Apply = Iter;
+impl<Bits> Bias<Bits> for Unbiased
+where
+    Bits: Number,
+{
+    type Apply = Iter<Bits>;
 
-    fn apply(&self, snapshot: Set) -> Self::Apply {
+    fn apply(&self, snapshot: Set<Bits>) -> Self::Apply {
         snapshot.iter()
     }
 }
@@ -33,10 +36,13 @@ impl Random {
     }
 }
 
-impl Bias for Random {
-    type Apply = RandomIter;
+impl<Bits> Bias<Bits> for Random
+where
+    Bits: Number,
+{
+    type Apply = RandomIter<Bits>;
 
-    fn apply(&self, set: Set) -> Self::Apply {
+    fn apply(&self, set: Set<Bits>) -> Self::Apply {
         RandomIter {
             value: self.0,
             iter: Set::new(set.state().rotate_right(self.0)).iter(),
@@ -44,20 +50,23 @@ impl Bias for Random {
     }
 }
 
-pub struct RandomIter {
+pub struct RandomIter<Bits> {
     value: u32,
-    iter: Iter,
+    iter: Iter<Bits>,
 }
 
-impl Iterator for RandomIter {
+impl<Bits> Iterator for RandomIter<Bits>
+where
+    Bits: Number,
+{
     type Item = u32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        Some(
-            (1u64 << self.iter.next()?)
-                .rotate_left(self.value)
-                .trailing_zeros(),
-        )
+        let value = Bits::from_bit(self.iter.next()?)
+            .rotate_left(self.value)
+            .trailing_zeros();
+
+        Some(value)
     }
 }
 
@@ -68,7 +77,7 @@ mod tests {
 
     #[test]
     fn test_random_bias() {
-        let set = Set::new(2 + 64 + 128 + 1024);
+        let set = Set::new(2u32 + 64 + 128 + 1024);
         let random = Random::new(3);
         let mut it = random.apply(set);
 
@@ -78,7 +87,7 @@ mod tests {
         assert_eq!(it.next(), Some(1));
         assert_eq!(it.next(), None);
 
-        let set = Set::new(2 + 64 + 128 + 1024);
+        let set = Set::new(2u32 + 64 + 128 + 1024);
         let mut it = set.iter();
 
         assert_eq!(it.next(), Some(1));

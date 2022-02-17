@@ -410,7 +410,7 @@ macro_rules! select {
 /// #[pin_project]
 /// struct MyFuture {
 ///     #[pin]
-///     select: StaticSelect<(Sleep, Sleep), Random, Option<u32>>,
+///     select: StaticSelect<u8, (Sleep, Sleep), Random, Option<u32>>,
 /// }
 ///
 /// impl Future for MyFuture {

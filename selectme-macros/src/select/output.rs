@@ -8,6 +8,9 @@ use crate::to_tokens::{
 };
 use crate::tok::{self, S};
 
+/// Limit to the number of branches we support.
+pub const BRANCH_LIMIT: usize = u128::BITS as usize;
+
 /// The name of the output enum.
 const OUT: &str = "Out";
 /// The private module in use.
@@ -283,10 +286,21 @@ impl Output {
         reset_base
     }
 
+    /// The type required to fit the given number of branches.
+    fn mask_type(&self) -> impl ToTokens {
+        match usize::BITS - self.branches.len().saturating_sub(1).leading_zeros() {
+            7 => "u128",
+            6 => "u64",
+            5 => "u32",
+            4 => "u16",
+            _ => "u8",
+        }
+    }
+
     /// Generates the expression that should initially be used as a mask. This
     /// ensures that disabled branches stay disabled even if woken up..
     fn mask_expr(&self, reset_base: usize) -> impl ToTokens + '_ {
-        from_fn(move |s| {
+        let mask_expr = from_fn(move |s| {
             let mut it = self
                 .branches
                 .iter()
@@ -305,7 +319,12 @@ impl Output {
             } else {
                 s.write(reset_base);
             }
-        })
+        });
+
+        braced((
+            ("let", MASK, ':', self.mask_type(), '=', mask_expr, ';'),
+            MASK,
+        ))
     }
 
     /// Generate bias.

@@ -4,11 +4,11 @@ use core::task::{Context, Poll};
 
 use crate::bias::Bias;
 use crate::select::DISABLED;
-use crate::set::Set;
+use crate::set::{Number, Set};
 
 /// The type of a static poller function. This is produced when
 /// [inline!][crate::inline!] is used with the `static` option.
-type StaticPoll<S, O> = fn(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>;
+type StaticPoll<Bits, S, O> = fn(&mut Context<'_>, Pin<&mut S>, &mut Set<Bits>, u32) -> Poll<O>;
 
 /// The implementation used by the [select!][crate::select!] macro internally
 /// and returned by the [inline!][crate::inline!] macro when the `static;`
@@ -32,7 +32,7 @@ type StaticPoll<S, O> = fn(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll
 /// #[pin_project]
 /// struct MyFuture {
 ///     #[pin]
-///     select: StaticSelect<(Sleep, Sleep), Random, Option<u32>>,
+///     select: StaticSelect<u8, (Sleep, Sleep), Random, Option<u32>>,
 /// }
 ///
 /// impl Future for MyFuture {
@@ -61,15 +61,20 @@ type StaticPoll<S, O> = fn(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll
 /// assert_eq!(my_future.await, Some(1));
 /// # }
 /// ```
-pub struct StaticSelect<S, B, O> {
-    snapshot: Set,
+pub struct StaticSelect<Bits, S, B, O> {
+    snapshot: Set<Bits>,
     state: S,
     bias: B,
-    poll: StaticPoll<S, O>,
+    poll: StaticPoll<Bits, S, O>,
 }
 
-impl<S, B, O> StaticSelect<S, B, O> {
-    pub(crate) fn new(snapshot: Set, bias: B, state: S, poll: StaticPoll<S, O>) -> Self {
+impl<Bits, S, B, O> StaticSelect<Bits, S, B, O> {
+    pub(crate) fn new(
+        snapshot: Set<Bits>,
+        bias: B,
+        state: S,
+        poll: StaticPoll<Bits, S, O>,
+    ) -> Self {
         Self {
             snapshot,
             state,
@@ -79,9 +84,10 @@ impl<S, B, O> StaticSelect<S, B, O> {
     }
 }
 
-impl<S, B, O> StaticSelect<S, B, O>
+impl<Bits, S, B, O> StaticSelect<Bits, S, B, O>
 where
-    B: Bias,
+    Bits: Number,
+    B: Bias<Bits>,
 {
     /// Get the next element from this select when pinned.
     ///
@@ -147,9 +153,10 @@ where
     }
 }
 
-impl<S, B, O> Future for StaticSelect<S, B, O>
+impl<Bits, S, B, O> Future for StaticSelect<Bits, S, B, O>
 where
-    B: Bias,
+    Bits: Number,
+    B: Bias<Bits>,
 {
     type Output = O;
 
@@ -158,13 +165,14 @@ where
     }
 }
 
-struct Next<'a, S, B, O> {
-    this: Pin<&'a mut StaticSelect<S, B, O>>,
+struct Next<'a, Bits, S, B, O> {
+    this: Pin<&'a mut StaticSelect<Bits, S, B, O>>,
 }
 
-impl<S, B, O> Future for Next<'_, S, B, O>
+impl<Bits, S, B, O> Future for Next<'_, Bits, S, B, O>
 where
-    B: Bias,
+    Bits: Number,
+    B: Bias<Bits>,
 {
     type Output = O;
 
