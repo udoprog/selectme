@@ -1,4 +1,4 @@
-error: `select!` must not be empty, consider replacing with `future::pending::<()>().await` instead!
+error: `select!` must not be empty, consider replacing with `future::pending::<()>().await` instead
  --> tests/ui/select_empty_fail.rs:6:5
   |
 6 |     selectme::select! {}
