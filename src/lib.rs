@@ -33,7 +33,7 @@
 //!     // work here
 //! }
 //!
-//! # #[tokio::main] async fn main() {
+//! # #[selectme::main] async fn main() {
 //! selectme::select! {
 //!     _ = do_stuff_async() => {
 //!         println!("do_stuff_async() completed first")
@@ -68,7 +68,7 @@
 //! # 42
 //! }
 //!
-//! # #[tokio::main]
+//! # #[selectme::main]
 //! # pub(crate) async fn main() {
 //! let output = selectme::inline! {
 //!     output = async_operation() => Some(output),
@@ -115,7 +115,7 @@
 //!     }
 //! }
 //!
-//! # #[tokio::main] pub(crate) async fn main() {
+//! # #[selectme::main] pub(crate) async fn main() {
 //! let s1 = time::sleep(Duration::from_millis(100));
 //! let s2 = time::sleep(Duration::from_millis(200));
 //!

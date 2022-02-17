@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use tokio::time;
 
-#[tokio::test]
+#[selectme::test]
 async fn poller_test() {
     let s1 = time::sleep(Duration::from_millis(100));
     tokio::pin!(s1);

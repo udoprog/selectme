@@ -1,0 +1,53 @@
+error: functions marked with `#[selectme::main]` must be `async`
+ --> tests/ui/entry_invalid_inputs_fail.rs:4:1
+  |
+4 | fn main_is_not_async() {}
+  | ^^
+
+error: unknown option `foo`, expected one of: `flavor`, `worker_threads`, `start_paused`
+ --> tests/ui/entry_invalid_inputs_fail.rs:6:18
+  |
+6 | #[selectme::main(foo)]
+  |                  ^^^
+
+error: unknown option `threadpool`, expected one of: `flavor`, `worker_threads`, `start_paused`
+ --> tests/ui/entry_invalid_inputs_fail.rs:9:18
+  |
+9 | #[selectme::main(threadpool::bar)]
+  |                  ^^^^^^^^^^
+
+error: functions marked with `#[selectme::test]` must be `async`
+  --> tests/ui/entry_invalid_inputs_fail.rs:13:1
+   |
+13 | fn test_is_not_async() {}
+   | ^^
+
+error: unknown option `foo`, expected one of: `flavor`, `worker_threads`, `start_paused`
+  --> tests/ui/entry_invalid_inputs_fail.rs:15:18
+   |
+15 | #[selectme::test(foo)]
+   |                  ^^^
+
+error: unknown option `foo`, expected one of: `flavor`, `worker_threads`, `start_paused`
+  --> tests/ui/entry_invalid_inputs_fail.rs:18:18
+   |
+18 | #[selectme::test(foo = 123)]
+   |                  ^^^
+
+error: no such runtime flavor, the runtime flavors are: "current_thread", "multi_thread"
+  --> tests/ui/entry_invalid_inputs_fail.rs:21:27
+   |
+21 | #[selectme::test(flavor = 123)]
+   |                           ^^^
+
+error: no such runtime flavor, the runtime flavors are: "current_thread", "multi_thread"
+  --> tests/ui/entry_invalid_inputs_fail.rs:24:27
+   |
+24 | #[selectme::test(flavor = "foo")]
+   |                           ^^^^^
+
+error: the `worker_threads` option requires the "multi_thread" runtime flavor. Use `#[selectme::test(flavor = "multi_thread")]`
+  --> tests/ui/entry_invalid_inputs_fail.rs:33:62
+   |
+33 | #[selectme::test(flavor = "current_thread", worker_threads = 4)]
+   |                                                              ^

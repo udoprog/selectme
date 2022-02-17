@@ -79,7 +79,7 @@
 ///     // more here
 /// }
 ///
-/// # #[tokio::main] async fn main() {
+/// # #[selectme::main] async fn main() {
 /// selectme::select! {
 ///     _ = do_stuff_async() => {
 ///         println!("do_stuff_async() completed first")
@@ -96,7 +96,7 @@
 /// ```
 /// use tokio_stream::{self as stream, StreamExt};
 ///
-/// # #[tokio::main] async fn main() {
+/// # #[selectme::main] async fn main() {
 /// let mut stream1 = stream::iter(vec![1, 2, 3]);
 /// let mut stream2 = stream::iter(vec![4, 5, 6]);
 ///
@@ -116,7 +116,7 @@
 /// ```
 /// use tokio_stream::{self as stream, StreamExt};
 ///
-/// # #[tokio::main] async fn main() {
+/// # #[selectme::main] async fn main() {
 /// let mut stream1 = stream::iter(vec![1, 2, 3]);
 /// let mut stream2 = stream::iter(vec![4, 5, 6]);
 ///
@@ -148,7 +148,7 @@
 /// use tokio_stream::{self as stream, StreamExt};
 /// use tokio::time::{self, Duration};
 ///
-/// # #[tokio::main] async fn main() {
+/// # #[selectme::main] async fn main() {
 /// let mut stream = stream::iter(vec![1, 2, 3]);
 /// let sleep = time::sleep(Duration::from_secs(1));
 /// tokio::pin!(sleep);
@@ -176,7 +176,7 @@
 /// ```
 /// use tokio::sync::oneshot;
 ///
-/// # #[tokio::main] async fn main() {
+/// # #[selectme::main] async fn main() {
 /// let (tx1, mut rx1) = oneshot::channel();
 /// let (tx2, mut rx2) = oneshot::channel();
 ///
@@ -209,7 +209,7 @@
 /// the [`biased` option in Tokio].
 ///
 /// ```
-/// # #[tokio::main] async fn main() {
+/// # #[selectme::main] async fn main() {
 /// let mut count = 0u8;
 ///
 /// loop {
@@ -257,7 +257,7 @@
 ///     // do work
 /// }
 ///
-/// # #[tokio::main] async fn main() {
+/// # #[selectme::main] async fn main() {
 /// let sleep = time::sleep(Duration::from_millis(50));
 /// tokio::pin!(sleep);
 ///
@@ -292,7 +292,7 @@
 ///     // do work
 /// }
 ///
-/// # #[tokio::main] async fn main() {
+/// # #[selectme::main] async fn main() {
 /// let sleep = time::sleep(Duration::from_millis(50));
 /// tokio::pin!(sleep);
 ///
@@ -344,7 +344,7 @@ macro_rules! select {
 /// the context of the loop:
 ///
 /// ```compile_fail
-/// # #[tokio::main]
+/// # #[selectme::main]
 /// # pub(crate) async fn main() {
 /// let s1 = std::future::ready(());
 ///
@@ -369,7 +369,7 @@ macro_rules! select {
 /// # 42
 /// }
 ///
-/// # #[tokio::main]
+/// # #[selectme::main]
 /// # pub(crate) async fn main() {
 /// let output = selectme::inline! {
 ///     output = async_operation() => Some(output),
@@ -422,7 +422,7 @@ macro_rules! select {
 ///     }
 /// }
 ///
-/// # #[tokio::main] pub(crate) async fn main() {
+/// # #[selectme::main] pub(crate) async fn main() {
 /// let s1 = time::sleep(Duration::from_millis(100));
 /// let s2 = time::sleep(Duration::from_millis(200));
 ///
@@ -448,7 +448,7 @@ macro_rules! select {
 /// use std::time::Duration;
 /// use tokio::time;
 ///
-/// # #[tokio::main] pub(crate) async fn main() {
+/// # #[selectme::main] pub(crate) async fn main() {
 /// let s1 = time::sleep(Duration::from_millis(100));
 /// let s2 = time::sleep(Duration::from_millis(200));
 ///

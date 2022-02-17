@@ -41,6 +41,7 @@ impl IntoTokens for Error {
 }
 
 /// Expand a message as an error.
+#[cfg(feature = "tokio-entry")]
 pub(crate) fn expand(message: &str) -> proc_macro::TokenStream {
     let error = Error::new(Span::call_site(), message);
     let mut stream = TokenStream::default();

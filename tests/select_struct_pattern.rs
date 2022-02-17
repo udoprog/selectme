@@ -1,7 +1,7 @@
 use std::future::{pending, ready};
 
 /// Various failures caused by input suddenly ending.
-#[tokio::test]
+#[selectme::test]
 async fn select_struct_pattern() {
     struct Foo {
         a: u32,
@@ -13,7 +13,7 @@ async fn select_struct_pattern() {
 }
 
 /// Various failures caused by input suddenly ending.
-#[tokio::test]
+#[selectme::test]
 async fn select_struct_pattern_block() {
     struct Foo {
         a: u32,

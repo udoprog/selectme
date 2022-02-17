@@ -8,23 +8,25 @@ use crate::tok::S;
 use crate::token_stream::TokenStream;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum EntryKind {
-    Main,
-    Test,
+pub(crate) enum SupportsThreading {
+    Supported,
+    // Unused unless `tokio-entry` is set.
+    #[allow(unused)]
+    NotSupported,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum SupportsThreading {
-    Supported,
-    NotSupported,
+pub(crate) enum EntryKind {
+    Main,
+    Test,
 }
 
 impl EntryKind {
     /// The name of the attribute used as the entry kind.
     pub(crate) fn name(&self) -> &str {
         match self {
-            EntryKind::Main => "tokio::main",
-            EntryKind::Test => "tokio::test",
+            EntryKind::Main => "selectme::main",
+            EntryKind::Test => "selectme::test",
         }
     }
 }

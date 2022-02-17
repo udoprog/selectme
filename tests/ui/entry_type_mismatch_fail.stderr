@@ -1,0 +1,32 @@
+error[E0308]: mismatched types
+ --> tests/ui/entry_type_mismatch_fail.rs:5:5
+  |
+5 |     Ok(())
+  |     ^^^^^^- help: consider using a semicolon here: `;`
+  |     |
+  |     expected `()`, found enum `Result`
+  |
+  = note: expected unit type `()`
+                  found enum `Result<(), _>`
+
+error[E0308]: mismatched types
+  --> tests/ui/entry_type_mismatch_fail.rs:10:12
+   |
+10 |     return Ok(());
+   |            ^^^^^^ expected `()`, found enum `Result`
+   |
+   = note: expected unit type `()`
+                   found enum `Result<(), _>`
+
+error[E0308]: mismatched types
+  --> tests/ui/entry_type_mismatch_fail.rs:14:46
+   |
+14 |   async fn extra_semicolon() -> Result<(), ()> {
+   |  ______________________________________________^
+15 | |     Ok(());
+   | |           - help: consider removing this semicolon
+16 | | }
+   | |_^ expected enum `Result`, found `()`
+   |
+   = note:   expected enum `Result<(), ()>`
+           found unit type `()`
