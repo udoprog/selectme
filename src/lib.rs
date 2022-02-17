@@ -172,8 +172,8 @@ mod set;
 #[macro_use]
 mod macros;
 
-#[cfg(feature = "tokio-entry")]
-pub use ::selectme_macros::{main, main_rt, test, test_rt};
+#[doc(inline)]
+pub use ::selectme_macros::{main, test};
 
 /// Hidden support module used by macros.
 #[doc(hidden)]

@@ -1,6 +1,6 @@
 use tokio_stream::{self as stream, StreamExt};
 
-#[tokio::main]
+#[selectme::main]
 async fn main() {
     let mut stream1 = stream::iter(vec![1, 2, 3]);
     let mut stream2 = stream::iter(vec![4, 5, 6]);

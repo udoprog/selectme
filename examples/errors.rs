@@ -1,6 +1,6 @@
 use tokio::sync::oneshot;
 
-#[tokio::main]
+#[selectme::main]
 async fn main() {
     let (tx1, mut rx1) = oneshot::channel();
     let (tx2, mut rx2) = oneshot::channel();

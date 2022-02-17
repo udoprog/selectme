@@ -16,9 +16,8 @@ categories = ["asynchronous", "concurrency"]
 [features]
 default = ["std", "random"]
 std = []
-tokio-entry = ["selectme-macros/tokio-entry"]
-tokio-diagnostics = ["selectme-macros/tokio-diagnostics"]
 random = []
+tokio-entry = ["selectme-macros/tokio-entry"]
 
 [dependencies]
 selectme-macros = { path = "selectme-macros", version = "0.6.0" }

@@ -4,7 +4,7 @@ async fn doit(values: &mut Vec<i32>, v: i32) {
     values.push(v);
 }
 
-#[tokio::main]
+#[selectme::main]
 async fn main() {
     let mut stream1 = stream::iter(vec![1, 2, 3]);
     let mut stream2 = stream::iter(vec![4, 5, 6]);

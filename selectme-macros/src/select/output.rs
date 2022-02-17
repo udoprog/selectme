@@ -2,10 +2,10 @@ use core::ops;
 
 use proc_macro::TokenTree;
 
-use crate::select::parser::{Block, Branch, Else};
-use crate::to_tokens::{
-    braced, bracketed, from_fn, group, parens, string, SpannedStream, ToTokens,
+use crate::into_tokens::{
+    braced, bracketed, from_fn, group, parens, string, IntoTokens, SpannedStream,
 };
+use crate::select::parser::{Block, Branch, Else};
 use crate::tok::{self, S};
 
 /// Limit to the number of branches we support.
@@ -70,13 +70,13 @@ impl Output {
     }
 
     /// Render the support module.
-    fn support(&self) -> impl ToTokens + Copy + '_ {
+    fn support(&self) -> impl IntoTokens + Copy + '_ {
         let toks = &self.tokens[self.krate.clone()];
         (toks, S, "__support", S)
     }
 
     /// Output enumeration.
-    fn out_enum(&self) -> impl ToTokens + '_ {
+    fn out_enum(&self) -> impl IntoTokens + '_ {
         (
             ("pub", "enum", OUT),
             branch_generics(&self.branches),
@@ -93,12 +93,12 @@ impl Output {
     }
 
     /// Private module declaration.
-    fn private_mod(&self) -> impl ToTokens + '_ {
+    fn private_mod(&self) -> impl IntoTokens + '_ {
         let private_mod = braced(self.out_enum());
         ("mod", PRIVATE, private_mod)
     }
 
-    fn state(&self) -> impl ToTokens + '_ {
+    fn state(&self) -> impl IntoTokens + '_ {
         parens(from_fn(|s| {
             for b in &self.branches {
                 if let Some(c) = &b.condition {
@@ -117,7 +117,7 @@ impl Output {
     }
 
     /// Render the else branch.
-    fn else_branch<'a>(&'a self, e: &'a Else) -> impl ToTokens + 'a {
+    fn else_branch<'a>(&'a self, e: &'a Else) -> impl IntoTokens + 'a {
         from_fn(move |s| match self.mode {
             Mode::Default => {
                 s.write((PRIVATE, S, OUT, S, "Disabled"));
@@ -128,11 +128,11 @@ impl Output {
         })
     }
 
-    fn allow_unreachable_code(&self) -> impl ToTokens {
+    fn allow_unreachable_code(&self) -> impl IntoTokens {
         ('#', bracketed(("allow", parens("unreachable_code"))))
     }
 
-    fn matches(&self) -> impl ToTokens + '_ {
+    fn matches(&self) -> impl IntoTokens + '_ {
         from_fn(move |s| {
             for b in &self.branches {
                 // We need to allow unreachable cause the expression that
@@ -184,7 +184,7 @@ impl Output {
     /// Generate the immediate match which performs a borrowing match over the
     /// pattern supplied by the user to determine whether we should break out of
     /// the loop with a value or not.
-    fn match_branch<'a>(&'a self, b: &'a Branch) -> impl ToTokens + 'a {
+    fn match_branch<'a>(&'a self, b: &'a Branch) -> impl IntoTokens + 'a {
         from_fn(move |s| match self.mode {
             Mode::Default => {
                 let pat = clean_pattern(self.tokens[b.binding.clone()].iter().cloned());
@@ -219,7 +219,7 @@ impl Output {
     }
 
     /// Generate the output matching branch.
-    fn out_branch<'a>(&'a self, b: &'a Branch) -> impl ToTokens + 'a {
+    fn out_branch<'a>(&'a self, b: &'a Branch) -> impl IntoTokens + 'a {
         (
             (PRIVATE, S, OUT, S, b.variant.as_ref()),
             parens(&self.tokens[b.binding.clone()]),
@@ -228,7 +228,7 @@ impl Output {
     }
 
     /// Generate the output matching "else" branch.
-    fn out_else<'a>(&'a self, e: &'a Else) -> impl ToTokens + 'a {
+    fn out_else<'a>(&'a self, e: &'a Else) -> impl IntoTokens + 'a {
         (
             (PRIVATE, S, OUT, S, "Disabled"),
             (tok::ROCKET, self.block(&e.block)),
@@ -236,7 +236,7 @@ impl Output {
     }
 
     /// Render a parsed block.
-    fn block<'a>(&'a self, block: &'a Block) -> impl ToTokens + 'a {
+    fn block<'a>(&'a self, block: &'a Block) -> impl IntoTokens + 'a {
         from_fn(move |s| match block {
             Block::Group(range) => {
                 s.write(&self.tokens[range.clone()]);
@@ -248,7 +248,7 @@ impl Output {
     }
 
     /// Expand the poll expression.
-    fn poll_body<'a>(&'a self, b: &'a Branch, unset: Option<&'a str>) -> impl ToTokens + 'a {
+    fn poll_body<'a>(&'a self, b: &'a Branch, unset: Option<&'a str>) -> impl IntoTokens + 'a {
         let future_poll = ("Future", S, "poll", parens((FUT, ',', CX)));
 
         (
@@ -287,7 +287,7 @@ impl Output {
     }
 
     /// The type required to fit the given number of branches.
-    fn mask_type(&self) -> impl ToTokens {
+    fn mask_type(&self) -> impl IntoTokens {
         match usize::BITS - self.branches.len().saturating_sub(1).leading_zeros() {
             7 => "u128",
             6 => "u64",
@@ -299,7 +299,7 @@ impl Output {
 
     /// Generates the expression that should initially be used as a mask. This
     /// ensures that disabled branches stay disabled even if woken up..
-    fn mask_expr(&self, reset_base: usize) -> impl ToTokens + '_ {
+    fn mask_expr(&self, reset_base: usize) -> impl IntoTokens + '_ {
         let mask_expr = from_fn(move |s| {
             let mut it = self
                 .branches
@@ -328,7 +328,7 @@ impl Output {
     }
 
     /// Generate bias.
-    fn bias(&self) -> impl ToTokens + '_ {
+    fn bias(&self) -> impl IntoTokens + '_ {
         if self.biased {
             (self.support(), "unbiased", parens(()))
         } else {
@@ -337,7 +337,7 @@ impl Output {
     }
 
     /// Generate imports.
-    fn imports(&self) -> impl ToTokens + '_ {
+    fn imports(&self) -> impl IntoTokens + '_ {
         (
             "use",
             self.support(),
@@ -347,7 +347,7 @@ impl Output {
     }
 
     /// Setup the poll declaration.
-    fn poll_decl(&self, reset_base: usize) -> impl ToTokens + '_ {
+    fn poll_decl(&self, reset_base: usize) -> impl IntoTokens + '_ {
         let match_body = ("match", "index", braced(self.matches()));
         let fallback = ("Poll", S, "Pending");
 
@@ -379,7 +379,7 @@ impl Output {
     }
 
     /// Expand a select which is awaited immediately.
-    pub(crate) fn expand(self) -> impl ToTokens {
+    pub(crate) fn expand(self) -> impl IntoTokens {
         from_fn(move |s| match self.mode {
             Mode::Default => {
                 s.write(braced(from_fn(move |s| {
@@ -424,7 +424,7 @@ impl Output {
 }
 
 /// Clean up a pattern by skipping over any `mut` and `&` tokens.
-fn clean_pattern(tree: impl Iterator<Item = TokenTree>) -> impl ToTokens {
+fn clean_pattern(tree: impl Iterator<Item = TokenTree>) -> impl IntoTokens {
     from_fn(move |s| {
         for tt in tree {
             match tt {
@@ -453,7 +453,7 @@ fn clean_pattern(tree: impl Iterator<Item = TokenTree>) -> impl ToTokens {
     })
 }
 
-fn branch_generics(branches: &[Branch]) -> impl ToTokens + '_ {
+fn branch_generics(branches: &[Branch]) -> impl IntoTokens + '_ {
     from_fn(move |s| {
         s.write('<');
 

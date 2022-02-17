@@ -147,7 +147,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(Output::new(
-            self.base.into_tokens(),
+            self.base.ininto_tokens(),
             mode,
             krate,
             branches,

@@ -4,8 +4,8 @@ pub(crate) use self::output::Mode;
 mod parser;
 
 use crate::error::Error;
+use crate::into_tokens::{from_fn, IntoTokens};
 use crate::parsing::Buf;
-use crate::to_tokens::{from_fn, ToTokens};
 use crate::token_stream::TokenStream;
 use proc_macro::{Delimiter, Span};
 
@@ -17,17 +17,17 @@ pub(crate) fn build(input: proc_macro::TokenStream, mode: Mode) -> proc_macro::T
 
     match p.parse(mode) {
         Ok(output) => {
-            output.expand().to_tokens(&mut stream, Span::mixed_site());
+            output.expand().into_tokens(&mut stream, Span::mixed_site());
         }
         Err(errors) => {
-            format_errors(errors).to_tokens(&mut stream, Span::mixed_site());
+            format_errors(errors).into_tokens(&mut stream, Span::mixed_site());
         }
     }
 
     stream.into_token_stream()
 }
 
-fn format_errors<I>(errors: I) -> impl ToTokens
+fn format_errors<I>(errors: I) -> impl IntoTokens
 where
     I: IntoIterator<Item = Error>,
     I::IntoIter: DoubleEndedIterator,

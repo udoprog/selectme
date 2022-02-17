@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use tokio::time;
 
-#[tokio::main]
-pub(crate) async fn main() {
+#[selectme::main]
+async fn main() {
     let s1 = time::sleep(Duration::from_millis(100));
     let s2 = time::sleep(Duration::from_millis(200));
 

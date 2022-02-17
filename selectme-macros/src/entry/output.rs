@@ -3,18 +3,9 @@ use std::ops;
 use proc_macro::{Delimiter, Span, TokenTree};
 
 use crate::error::Error;
-use crate::to_tokens::{bracketed, from_fn, parens, string, ToTokens};
+use crate::into_tokens::{bracketed, from_fn, parens, string, IntoTokens};
 use crate::tok::S;
 use crate::token_stream::TokenStream;
-
-#[derive(Default)]
-pub(crate) struct TailState {
-    pub(crate) block: Option<Span>,
-    pub(crate) start: Option<Span>,
-    pub(crate) end: Option<Span>,
-    /// Indicates if last expression is a return.
-    pub(crate) return_: bool,
-}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum EntryKind {
@@ -118,37 +109,36 @@ impl Config {
 /// The parsed item output.
 pub(crate) struct ItemOutput {
     tokens: Vec<TokenTree>,
-    pub(crate) has_async: bool,
+    async_keyword: Option<usize>,
+    fn_name: Option<usize>,
     signature: Option<ops::Range<usize>>,
-    block: Option<ops::Range<usize>>,
-    tail_state: TailState,
+    block: Option<usize>,
 }
 
 impl ItemOutput {
     pub(crate) fn new(
         tokens: Vec<TokenTree>,
-        has_async: bool,
+        async_keyword: Option<usize>,
+        fn_name: Option<usize>,
         signature: Option<ops::Range<usize>>,
-        block: Option<ops::Range<usize>>,
-        tail_state: TailState,
+        block: Option<usize>,
     ) -> Self {
         Self {
             tokens,
-            has_async,
+            async_keyword,
+            fn_name,
             signature,
             block,
-            tail_state,
         }
     }
 
     /// Validate the parsed item.
     pub(crate) fn validate(&self, kind: EntryKind, errors: &mut Vec<Error>) {
-        if !self.has_async {
+        if self.async_keyword.is_none() {
             let span = self
                 .signature
                 .as_ref()
-                .and_then(|s| self.tokens.get(s.clone()))
-                .and_then(|t| t.first())
+                .and_then(|s| self.tokens.get(s.clone())?.first())
                 .map(|tt| tt.span())
                 .unwrap_or_else(Span::call_site);
 
@@ -159,65 +149,32 @@ impl ItemOutput {
         }
     }
 
-    pub(crate) fn block_spans(&self) -> (Span, Span) {
-        let start = self
-            .tail_state
-            .start
-            .or(self.tail_state.block)
-            .unwrap_or_else(Span::call_site);
-        let end = self
-            .tail_state
-            .end
-            .or(self.tail_state.block)
-            .unwrap_or_else(Span::call_site);
-        (start, end)
+    pub(crate) fn block_span(&self) -> Option<Span> {
+        let block = *self.block.as_ref()?;
+        Some(self.tokens.get(block)?.span())
     }
 
     /// Expand into a function item.
-    pub(crate) fn expand_item(
-        &self,
-        kind: EntryKind,
-        config: Config,
-        start: Span,
-    ) -> impl ToTokens + '_ {
+    pub(crate) fn expand_item(self, kind: EntryKind, config: Config) -> impl IntoTokens {
         from_fn(move |s| {
-            if let (Some(signature), Some(block)) = (self.signature.clone(), self.block.clone()) {
-                let block_span = self.tail_state.block.unwrap_or_else(Span::call_site);
-
-                s.write((
-                    self.entry_kind_attribute(kind),
-                    &self.tokens[signature],
-                    group_with_span(
-                        Delimiter::Brace,
-                        self.item_body(config, block, start),
-                        block_span,
-                    ),
-                ))
+            if let Some(item) = self.expand_if_present(kind, config) {
+                s.write(item);
+            } else if let Some(index) = self.async_keyword {
+                s.write(expand_without_index(&self.tokens[..], index));
             } else {
                 s.write(&self.tokens[..]);
             }
         })
     }
 
-    /// Generate attribute associated with entry kind.
-    fn entry_kind_attribute(&self, kind: EntryKind) -> impl ToTokens {
-        from_fn(move |s| {
-            if let EntryKind::Test = kind {
-                s.write((
-                    '#',
-                    bracketed((S, "core", S, "prelude", S, "v1", S, "test")),
-                ))
-            }
-        })
-    }
+    /// Expands the function item if all prerequisites are present.
+    fn expand_if_present(&self, kind: EntryKind, config: Config) -> Option<impl IntoTokens + '_> {
+        let signature = self.signature.as_ref()?.clone();
+        let signature = self.tokens.get(signature)?;
+        let block = self.tokens.get(self.block?)?;
+        let fn_name = self.tokens.get(self.fn_name?)?;
+        let async_keyword = self.async_keyword?;
 
-    /// Expanded item body.
-    fn item_body(
-        &self,
-        config: Config,
-        block: ops::Range<usize>,
-        start: Span,
-    ) -> impl ToTokens + '_ {
         // NB: override the first generated part with the detected start span.
         let rt = ("tokio", S, "runtime", S, "Builder");
 
@@ -249,60 +206,61 @@ impl ItemOutput {
             parens(string("Failed building the Runtime")),
         );
 
+        let item_fn = (signature, block.clone());
+        let item_body = (
+            (build, '.', "block_on"),
+            parens((fn_name.clone(), parens(()))),
+        );
+
+        Some((
+            self.entry_kind_attribute(kind),
+            expand_without_index(signature, async_keyword),
+            group_with_span(Delimiter::Brace, (item_fn, item_body), block.span()),
+        ))
+    }
+
+    /// Generate attribute associated with entry kind.
+    fn entry_kind_attribute(&self, kind: EntryKind) -> impl IntoTokens {
         from_fn(move |s| {
-            if self.tail_state.return_ {
+            if let EntryKind::Test = kind {
                 s.write((
-                    with_span(("return", build, '.', "block_on"), start),
-                    parens(("async", &self.tokens[block])),
-                    ';',
-                ));
-            } else {
-                s.write((
-                    with_span((build, '.', "block_on"), start),
-                    parens(("async", &self.tokens[block])),
-                ));
+                    '#',
+                    bracketed((S, "core", S, "prelude", S, "v1", S, "test")),
+                ))
             }
         })
     }
 }
 
-/// Insert the given tokens with a custom span.
-pub(crate) fn with_span<T>(inner: T, span: Span) -> impl ToTokens
-where
-    T: ToTokens,
-{
-    WithSpan(inner, span)
-}
-
-struct WithSpan<T>(T, Span);
-
-impl<T> ToTokens for WithSpan<T>
-where
-    T: ToTokens,
-{
-    fn to_tokens(self, stream: &mut TokenStream, _: Span) {
-        self.0.to_tokens(stream, self.1);
-    }
+/// Expand the given token tree while skipping the given index.
+fn expand_without_index(tokens: &[TokenTree], index: usize) -> impl IntoTokens + '_ {
+    from_fn(move |s| {
+        for (n, tt) in tokens.iter().enumerate() {
+            if n != index {
+                s.write(tt.clone());
+            }
+        }
+    })
 }
 
 /// Construct a custom group  with a custom span that is not inherited by its
 /// children.
-pub(crate) fn group_with_span<T>(delimiter: Delimiter, inner: T, span: Span) -> impl ToTokens
+pub(crate) fn group_with_span<T>(delimiter: Delimiter, inner: T, span: Span) -> impl IntoTokens
 where
-    T: ToTokens,
+    T: IntoTokens,
 {
     GroupWithSpan(delimiter, inner, span)
 }
 
 struct GroupWithSpan<T>(Delimiter, T, Span);
 
-impl<T> ToTokens for GroupWithSpan<T>
+impl<T> IntoTokens for GroupWithSpan<T>
 where
-    T: ToTokens,
+    T: IntoTokens,
 {
-    fn to_tokens(self, stream: &mut TokenStream, span: Span) {
+    fn into_tokens(self, stream: &mut TokenStream, span: Span) {
         let checkpoint = stream.checkpoint();
-        self.1.to_tokens(stream, span);
+        self.1.into_tokens(stream, span);
         stream.group(self.2, self.0, checkpoint);
     }
 }

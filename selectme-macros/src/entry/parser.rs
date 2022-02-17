@@ -1,8 +1,6 @@
-use proc_macro::{Delimiter, Group, Literal, Span, TokenTree};
+use proc_macro::{Delimiter, Literal, Span, TokenTree};
 
-use crate::entry::output::{
-    Config, EntryKind, ItemOutput, RuntimeFlavor, SupportsThreading, TailState,
-};
+use crate::entry::output::{Config, EntryKind, ItemOutput, RuntimeFlavor, SupportsThreading};
 use crate::error::Error;
 use crate::parsing::{BaseParser, Buf};
 use crate::parsing::{Punct, COMMA, EQ};
@@ -197,24 +195,37 @@ impl<'a> ItemParser<'a> {
         let start = self.base.len();
         let mut signature = None;
         let mut block = None;
-
-        let mut has_async = false;
-
-        let mut tail_state = TailState::default();
+        let mut async_keyword = None;
+        let mut fn_name = None;
+        let mut next_is_name = false;
 
         while let Some(tt) = self.base.bump() {
             match tt {
-                TokenTree::Ident(ident) if self.base.buf.display_as_str(&ident) == "async" => {
-                    // NB: intentionally skip over this token.
-                    has_async = true;
+                TokenTree::Ident(ident) => {
+                    match self.base.buf.display_as_str(&ident) {
+                        "async" => {
+                            if async_keyword.is_none() {
+                                async_keyword = Some(self.base.len());
+                            }
+                        }
+                        "fn" => {
+                            if fn_name.is_none() {
+                                next_is_name = true;
+                            }
+                        }
+                        _ => {
+                            if std::mem::take(&mut next_is_name) {
+                                fn_name = Some(self.base.len());
+                            }
+                        }
+                    }
+
+                    self.base.push(TokenTree::Ident(ident));
                 }
                 TokenTree::Group(g) if matches!(g.delimiter(), Delimiter::Brace) => {
                     signature = Some(start..self.base.len());
-                    let start = self.base.len();
-                    tail_state.block = Some(g.span());
-                    self.find_last_stmt_range(&g, &mut tail_state);
+                    block = Some(self.base.len());
                     self.base.push(TokenTree::Group(g));
-                    block = Some(start..self.base.len());
                 }
                 tt => {
                     self.base.push(tt);
@@ -222,37 +233,7 @@ impl<'a> ItemParser<'a> {
             }
         }
 
-        let tokens = self.base.into_tokens();
-
-        ItemOutput::new(tokens, has_async, signature, block, tail_state)
+        let tokens = self.base.ininto_tokens();
+        ItemOutput::new(tokens, async_keyword, fn_name, signature, block)
     }
-
-    /// Find the range of spans that is defined by the last statement in the
-    /// block so that they can be used for the generated expression.
-    ///
-    /// This in turn improves upon diagnostics when return types do not match.
-    #[cfg(feature = "tokio-diagnostics")]
-    pub(crate) fn find_last_stmt_range(&mut self, g: &Group, tail_state: &mut TailState) {
-        let mut update = true;
-
-        for tt in g.stream() {
-            let span = tt.span();
-            tail_state.end = Some(span);
-
-            match tt {
-                TokenTree::Punct(p) if p.as_char() == ';' => {
-                    update = true;
-                }
-                tt => {
-                    if std::mem::take(&mut update) {
-                        tail_state.return_ = matches!(&tt, TokenTree::Ident(ident) if self.base.buf.display_as_str(ident) == "return");
-                        tail_state.start = Some(span);
-                    }
-                }
-            }
-        }
-    }
-
-    #[cfg(not(feature = "tokio-diagnostics"))]
-    pub(crate) fn find_last_stmt_range(&self, _: &Group, _: &mut TailState) {}
 }

@@ -13,11 +13,8 @@ A fast and fair select! macro for asynchronous Rust.
 """
 categories = ["asynchronous", "concurrency"]
 
-[features]
-default = []
-# Define the tokio entry macros.
+[features] 
 tokio-entry = []
-tokio-diagnostics = []
 
 [lib]
 proc-macro = true
