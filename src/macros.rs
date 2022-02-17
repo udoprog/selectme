@@ -214,6 +214,8 @@
 ///
 /// loop {
 ///     selectme::select! {
+///         biased;
+///
 ///         _ = async {} if count < 1 => {
 ///             count += 1;
 ///             assert_eq!(count, 1);
@@ -402,13 +404,13 @@ macro_rules! select {
 /// use std::time::Duration;
 ///
 /// use pin_project::pin_project;
-/// use selectme::StaticSelect;
+/// use selectme::{Random, StaticSelect};
 /// use tokio::time::{self, Sleep};
 ///
 /// #[pin_project]
 /// struct MyFuture {
 ///     #[pin]
-///     select: StaticSelect<(Sleep, Sleep), Option<u32>>,
+///     select: StaticSelect<(Sleep, Sleep), Random, Option<u32>>,
 /// }
 ///
 /// impl Future for MyFuture {

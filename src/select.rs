@@ -2,6 +2,7 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
+use crate::bias::Bias;
 use crate::set::Set;
 
 /// Index which indicates that all branches have been disabled.
@@ -22,7 +23,7 @@ pub const DISABLED: u32 = u32::MAX;
 /// ```
 /// use std::time::Duration;
 ///
-/// use selectme::Select;
+/// use selectme::{Random, Select};
 /// use tokio::time;
 ///
 /// # #[tokio::main] pub async fn main() {
@@ -31,7 +32,7 @@ pub const DISABLED: u32 = u32::MAX;
 ///
 /// let mut inlined_var = false;
 ///
-/// let output: Select<_, _> = selectme::inline! {
+/// let output: Select<_, Random, _> = selectme::inline! {
 ///     () = s1 => {
 ///         inlined_var = true;
 ///         Some(1)
@@ -50,24 +51,27 @@ pub const DISABLED: u32 = u32::MAX;
 /// # }
 /// ```
 
-pub struct Select<S, T> {
+pub struct Select<S, B, T> {
     snapshot: Set,
     state: S,
+    bias: B,
     poll: T,
 }
 
-impl<S, T> Select<S, T> {
-    pub(crate) fn new(snapshot: Set, state: S, poll: T) -> Self {
+impl<S, B, T> Select<S, B, T> {
+    pub(crate) fn new(snapshot: Set, bias: B, state: S, poll: T) -> Self {
         Self {
             snapshot,
             state,
+            bias,
             poll,
         }
     }
 }
 
-impl<S, T, O> Select<S, T>
+impl<S, B, T, O> Select<S, B, T>
 where
+    B: Bias,
     T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
 {
     /// Get the next element from this select when pinned.
@@ -113,7 +117,7 @@ where
             let mut state = Pin::new_unchecked(&mut this.state);
 
             // All branches are disabled.
-            for index in this.snapshot.iter() {
+            for index in this.bias.apply(this.snapshot) {
                 if let Poll::Ready(output) =
                     (this.poll)(cx, state.as_mut(), &mut this.snapshot, index)
                 {
@@ -132,8 +136,9 @@ where
     }
 }
 
-impl<S, T, O> Future for Select<S, T>
+impl<S, B, T, O> Future for Select<S, B, T>
 where
+    B: Bias,
     T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
 {
     type Output = O;
@@ -143,12 +148,13 @@ where
     }
 }
 
-struct Next<'a, S, T> {
-    this: Pin<&'a mut Select<S, T>>,
+struct Next<'a, S, B, T> {
+    this: Pin<&'a mut Select<S, B, T>>,
 }
 
-impl<S, T, O> Future for Next<'_, S, T>
+impl<S, B, T, O> Future for Next<'_, S, B, T>
 where
+    B: Bias,
     T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
 {
     type Output = O;

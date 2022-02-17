@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use selectme::StaticSelect;
+use selectme::{Random, StaticSelect};
 use tokio::time::{self, Sleep};
 
 #[tokio::main]
@@ -8,7 +8,7 @@ pub async fn main() {
     let s1 = time::sleep(Duration::from_millis(100));
     let s2 = time::sleep(Duration::from_millis(200));
 
-    let output: StaticSelect<(Sleep, Sleep), Option<u32>> = selectme::inline! {
+    let output: StaticSelect<(Sleep, Sleep), Random, Option<u32>> = selectme::inline! {
         static;
 
         () = s1 => Some(1),

@@ -14,6 +14,12 @@ impl Set {
         Self { state }
     }
 
+    /// Access the interior state of the set.
+    #[inline]
+    pub(crate) fn state(&self) -> u64 {
+        self.state
+    }
+
     /// Test if the set is empty.
     #[inline]
     pub(crate) fn is_empty(&self) -> bool {
@@ -38,12 +44,12 @@ impl Set {
 
     /// Construct an iterator over the snapshot.
     #[inline]
-    pub(crate) fn iter(&self) -> impl Iterator<Item = u32> {
+    pub(crate) fn iter(self) -> Iter {
         Iter { state: self.state }
     }
 }
 
-struct Iter {
+pub struct Iter {
     state: u64,
 }
 

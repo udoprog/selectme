@@ -97,13 +97,13 @@
 //! use std::time::Duration;
 //!
 //! use pin_project::pin_project;
-//! use selectme::StaticSelect;
+//! use selectme::{Random, StaticSelect};
 //! use tokio::time::{self, Sleep};
 //!
 //! #[pin_project]
 //! struct MyFuture {
 //!     #[pin]
-//!     select: StaticSelect<(Sleep, Sleep), Option<u32>>,
+//!     select: StaticSelect<(Sleep, Sleep), Random, Option<u32>>,
 //! }
 //!
 //! impl Future for MyFuture {
@@ -152,6 +152,12 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
+mod bias;
+pub use self::bias::{Random, Unbiased};
+
+#[cfg(feature = "random")]
+mod rand;
+
 mod select;
 pub use crate::select::Select;
 
@@ -169,6 +175,7 @@ pub use ::selectme_macros::{main, main_rt, test, test_rt};
 /// Hidden support module used by macros.
 #[doc(hidden)]
 pub mod __support {
+    pub use crate::bias::{Bias, Random, Unbiased};
     pub use crate::select::DISABLED;
     pub use core::future::Future;
     pub use core::pin::Pin;
@@ -181,22 +188,40 @@ pub mod __support {
     use crate::set::Set;
     use crate::static_select::StaticSelect;
 
+    /// Construct a random bias.
+    #[inline]
+    #[cfg(feature = "random")]
+    pub fn random() -> Random {
+        Random::new(crate::rand::thread_rng_n(64))
+    }
+
+    /// Construct an unbiased bias.
+    #[inline]
+    pub const fn unbiased() -> Unbiased {
+        Unbiased
+    }
+
     /// Setup a [Select] with a dynamic function used to poll.
     #[inline]
-    pub fn select<S, T, O>(mask: u64, state: S, poll: T) -> Select<S, T>
+    pub fn select<S, B, T, O>(mask: u64, bias: B, state: S, poll: T) -> Select<S, B, T>
     where
+        B: Bias,
         T: FnMut(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
     {
-        Select::new(Set::new(mask), state, poll)
+        Select::new(Set::new(mask), bias, state, poll)
     }
 
     /// Setup a [Select] with a static function used to poll.
     #[inline]
-    pub fn static_select<S, O>(
+    pub fn static_select<S, B, O>(
         mask: u64,
+        bias: B,
         state: S,
         poll: fn(&mut Context<'_>, Pin<&mut S>, &mut Set, u32) -> Poll<O>,
-    ) -> StaticSelect<S, O> {
-        StaticSelect::new(Set::new(mask), state, poll)
+    ) -> StaticSelect<S, B, O>
+    where
+        B: Bias,
+    {
+        StaticSelect::new(Set::new(mask), bias, state, poll)
     }
 }

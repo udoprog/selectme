@@ -14,10 +14,11 @@ A fast and fair select! macro for asynchronous Rust.
 categories = ["asynchronous", "concurrency"]
 
 [features]
-default = ["std"]
+default = ["std", "random"]
 std = []
 tokio-entry = ["selectme-macros/tokio-entry"]
 tokio-diagnostics = ["selectme-macros/tokio-diagnostics"]
+random = []
 
 [dependencies]
 selectme-macros = { path = "selectme-macros", version = "0.4.4" }

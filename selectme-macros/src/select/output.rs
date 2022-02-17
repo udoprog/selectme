@@ -40,7 +40,6 @@ pub struct Output {
     krate: ops::Range<usize>,
     branches: Vec<Branch>,
     else_branch: Option<Else>,
-    #[allow(unused)]
     biased: bool,
     select_kind: SelectKind,
 }
@@ -309,6 +308,15 @@ impl Output {
         })
     }
 
+    /// Generate bias.
+    fn bias(&self) -> impl ToTokens + '_ {
+        if self.biased {
+            (self.support(), "unbiased", parens(()))
+        } else {
+            (self.support(), "random", parens(()))
+        }
+    }
+
     /// Generate imports.
     fn imports(&self) -> impl ToTokens + '_ {
         (
@@ -341,6 +349,8 @@ impl Output {
             },
             parens((
                 self.mask_expr(reset_base),
+                ',',
+                self.bias(),
                 ',',
                 self.state(),
                 ',',
