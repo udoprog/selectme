@@ -8,7 +8,7 @@ use crate::token_stream::TokenStream;
 
 /// An error that can be raised during parsing which is associated with a span.
 #[derive(Debug)]
-pub struct Error {
+pub(crate) struct Error {
     span: Span,
     message: Box<str>,
 }

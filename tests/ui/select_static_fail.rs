@@ -1,4 +1,4 @@
-pub fn main() {
+pub(crate) fn main() {
 }
 
 /// Regular `select!` does not support that `static` option.

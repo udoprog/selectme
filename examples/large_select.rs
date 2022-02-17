@@ -98,7 +98,7 @@ macro_rules! test {
     }
 }
 
-pub fn main() {
+pub(crate) fn main() {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .build()
         .expect("failed to construct runtime");

@@ -12,6 +12,7 @@ pub trait Bias<Bits> {
 
 /// An unbiased selector which starts from the top and works its way to the
 /// bottom.
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct Unbiased;
 
@@ -28,6 +29,7 @@ where
 
 /// A biased selector which applies the given random pattern to selection.
 #[non_exhaustive]
+#[derive(Debug)]
 pub struct Random(u32);
 
 impl Random {
@@ -50,6 +52,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct RandomIter<Bits> {
     value: u32,
     iter: Iter<Bits>,

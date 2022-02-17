@@ -1,5 +1,5 @@
 mod output;
-pub use self::output::Mode;
+pub(crate) use self::output::Mode;
 
 mod parser;
 
@@ -9,7 +9,7 @@ use crate::to_tokens::{from_fn, ToTokens};
 use crate::token_stream::TokenStream;
 use proc_macro::{Delimiter, Span};
 
-pub fn build(input: proc_macro::TokenStream, mode: Mode) -> proc_macro::TokenStream {
+pub(crate) fn build(input: proc_macro::TokenStream, mode: Mode) -> proc_macro::TokenStream {
     let mut buf = Buf::new();
     let p = parser::Parser::new(input, &mut buf);
 

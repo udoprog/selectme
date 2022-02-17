@@ -1,6 +1,6 @@
 use std::future::ready;
 
-pub fn main() {
+pub(crate) fn main() {
     let _ = test();
 }
 

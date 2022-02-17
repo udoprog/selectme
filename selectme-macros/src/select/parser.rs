@@ -11,20 +11,20 @@ enum Segment {
     Else(Else),
 }
 
-pub enum Block {
+pub(crate) enum Block {
     Group(ops::Range<usize>),
     Expr(ops::Range<usize>),
 }
 
 impl Block {
     /// Indicate if this block is an expression or not.
-    pub fn is_expr(&self) -> bool {
+    pub(crate) fn is_expr(&self) -> bool {
         matches!(self, Block::Expr(..))
     }
 }
 
 /// A parser for the `select!` macro.
-pub struct Parser<'a> {
+pub(crate) struct Parser<'a> {
     base: BaseParser<'a>,
     errors: Vec<Error>,
 }
@@ -73,7 +73,7 @@ impl<'a> Parser<'a> {
                             ));
 
                             self.errors.push(Error::new(
-                                span.clone(),
+                                *span,
                                 "`static` option previously specified here",
                             ));
                         } else {
@@ -179,7 +179,7 @@ impl<'a> Parser<'a> {
             "expected expression following `if`",
         ));
         self.recover_to_group();
-        return None;
+        None
     }
 
     fn parse_expr(
@@ -384,7 +384,6 @@ impl<'a> Parser<'a> {
             binding,
             expr,
             block,
-            waker: format!("WAKER{}", index).into(),
             generic: format!("T{}", index).into(),
             variant: format!("Branch{}", index).into(),
             condition,
@@ -420,35 +419,33 @@ impl<'a> Parser<'a> {
 }
 
 /// A branch condition.
-pub struct Condition {
+pub(crate) struct Condition {
     /// Condition variable.
-    pub var: Box<str>,
+    pub(crate) var: Box<str>,
     /// Token range of the condition.
-    pub range: ops::Range<usize>,
+    pub(crate) range: ops::Range<usize>,
 }
 
 /// A regular branch.
-pub struct Branch {
+pub(crate) struct Branch {
     /// Branch index.
-    pub index: usize,
+    pub(crate) index: usize,
     /// Range for the binding to use.
-    pub binding: ops::Range<usize>,
+    pub(crate) binding: ops::Range<usize>,
     /// Range for the expression to be evaluated as a future.
-    pub expr: ops::Range<usize>,
+    pub(crate) expr: ops::Range<usize>,
     /// Range for the branch.
-    pub block: Block,
-    /// The name of the child waker for this block.
-    pub waker: Box<str>,
+    pub(crate) block: Block,
     /// The name of the generic used by the branch.
-    pub generic: Box<str>,
+    pub(crate) generic: Box<str>,
     /// The name of the enum variant use by this branch.
-    pub variant: Box<str>,
+    pub(crate) variant: Box<str>,
     /// Branch condition.
-    pub condition: Option<Condition>,
+    pub(crate) condition: Option<Condition>,
 }
 
 /// Code for the else branch.
-pub struct Else {
+pub(crate) struct Else {
     /// Range for the branch.
-    pub block: Block,
+    pub(crate) block: Block,
 }

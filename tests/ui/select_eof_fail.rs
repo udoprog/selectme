@@ -1,4 +1,4 @@
-pub fn main() {
+pub(crate) fn main() {
 }
 
 /// Various failures caused by input suddenly ending.

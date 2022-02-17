@@ -1,4 +1,4 @@
-pub fn main() {
+pub(crate) fn main() {
 }
 
 /// Failed to parse the first block and recover to parse the second one (and

@@ -6,11 +6,11 @@ use proc_macro::{Spacing, Span, TokenTree};
 const BUF: usize = 2;
 
 // Punctuations that we look for.
-pub const COMMA: [char; 2] = [',', '\0'];
-pub const EQ: [char; 2] = ['=', '\0'];
-pub const ROCKET: [char; 2] = ['=', '>'];
+pub(crate) const COMMA: [char; 2] = [',', '\0'];
+pub(crate) const EQ: [char; 2] = ['=', '\0'];
+pub(crate) const ROCKET: [char; 2] = ['=', '>'];
 
-pub struct Buf {
+pub(crate) struct Buf {
     // Static ring buffer used for processing tokens.
     ring: [Option<TokenTree>; BUF],
     head: usize,
@@ -20,7 +20,7 @@ pub struct Buf {
 }
 
 impl Buf {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             ring: [None, None],
             string: String::new(),
@@ -38,7 +38,7 @@ impl Buf {
     }
 
     /// Get the next element out of the ring buffer.
-    pub fn next(&mut self) -> Option<TokenTree> {
+    pub(crate) fn next(&mut self) -> Option<TokenTree> {
         if let Some(head) = self.ring.get_mut(self.tail % BUF).and_then(|s| s.take()) {
             self.tail += 1;
             Some(head)
@@ -62,7 +62,7 @@ impl Buf {
     }
 
     /// Try to get the `n`th token and fill from the provided iterator if neede.
-    pub fn nth<I>(&mut self, n: usize, it: I) -> Option<&TokenTree>
+    pub(crate) fn nth<I>(&mut self, n: usize, it: I) -> Option<&TokenTree>
     where
         I: Iterator<Item = TokenTree>,
     {
@@ -71,7 +71,7 @@ impl Buf {
     }
 
     /// Try to get the next pair of tokens.
-    pub fn peek2<I>(&mut self, it: I) -> Option<(&TokenTree, &TokenTree)>
+    pub(crate) fn peek2<I>(&mut self, it: I) -> Option<(&TokenTree, &TokenTree)>
     where
         I: Iterator<Item = TokenTree>,
     {
@@ -83,7 +83,7 @@ impl Buf {
 
     /// Coerce the given value into a string by formatting into an existing
     /// string buffer.
-    pub fn display_as_str(&mut self, value: impl fmt::Display) -> &str {
+    pub(crate) fn display_as_str(&mut self, value: impl fmt::Display) -> &str {
         use std::fmt::Write;
 
         self.string.clear();
@@ -92,7 +92,11 @@ impl Buf {
     }
 
     /// Test if the given [TokenTree] matches the specified condition.
-    pub fn ident_matches(&mut self, tt: &TokenTree, cond: impl FnOnce(&str) -> bool) -> bool {
+    pub(crate) fn ident_matches(
+        &mut self,
+        tt: &TokenTree,
+        cond: impl FnOnce(&str) -> bool,
+    ) -> bool {
         if let TokenTree::Ident(ident) = tt {
             return cond(self.display_as_str(ident));
         }
@@ -102,14 +106,14 @@ impl Buf {
 }
 
 /// Parser base.
-pub struct BaseParser<'a> {
+pub(crate) struct BaseParser<'a> {
     it: proc_macro::token_stream::IntoIter,
     tokens: Vec<TokenTree>,
     pub(crate) buf: &'a mut Buf,
 }
 
 impl<'a> BaseParser<'a> {
-    pub fn new(stream: proc_macro::TokenStream, buf: &'a mut Buf) -> Self {
+    pub(crate) fn new(stream: proc_macro::TokenStream, buf: &'a mut Buf) -> Self {
         buf.clear();
 
         Self {
@@ -120,17 +124,17 @@ impl<'a> BaseParser<'a> {
     }
 
     /// Push a single token onto the token buffer.
-    pub fn push(&mut self, tt: TokenTree) {
+    pub(crate) fn push(&mut self, tt: TokenTree) {
         self.tokens.push(tt);
     }
 
     /// Look at the last token in the tokens buffer.
-    pub fn last(&mut self) -> Option<&TokenTree> {
+    pub(crate) fn last(&mut self) -> Option<&TokenTree> {
         self.tokens.last()
     }
 
     /// Get the given range of tokens.
-    pub fn get<I>(&self, range: I) -> Option<&I::Output>
+    pub(crate) fn get<I>(&self, range: I) -> Option<&I::Output>
     where
         I: SliceIndex<[TokenTree]>,
     {
@@ -138,7 +142,7 @@ impl<'a> BaseParser<'a> {
     }
 
     /// Extend the tokens recorded with the given iterator.
-    pub fn extend<I>(&mut self, iter: I)
+    pub(crate) fn extend<I>(&mut self, iter: I)
     where
         I: IntoIterator<Item = TokenTree>,
     {
@@ -146,22 +150,22 @@ impl<'a> BaseParser<'a> {
     }
 
     /// The current length in number of tokens recorded.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.tokens.len()
     }
 
     /// Access the token at the given offset.
-    pub fn nth(&mut self, n: usize) -> Option<&TokenTree> {
+    pub(crate) fn nth(&mut self, n: usize) -> Option<&TokenTree> {
         self.buf.nth(n, &mut self.it)
     }
 
     /// Access the next two tokens.
-    pub fn peek2(&mut self) -> Option<(&TokenTree, &TokenTree)> {
+    pub(crate) fn peek2(&mut self) -> Option<(&TokenTree, &TokenTree)> {
         self.buf.peek2(&mut self.it)
     }
 
     /// Bump the last token.
-    pub fn bump(&mut self) -> Option<TokenTree> {
+    pub(crate) fn bump(&mut self) -> Option<TokenTree> {
         if let Some(head) = self.buf.next() {
             return Some(head);
         }
@@ -170,14 +174,14 @@ impl<'a> BaseParser<'a> {
     }
 
     /// Step over the given number of tokens.
-    pub fn step(&mut self, n: usize) {
+    pub(crate) fn step(&mut self, n: usize) {
         for _ in 0..n {
             self.bump();
         }
     }
 
     /// Process a punctuation.
-    pub fn peek_punct(&mut self) -> Option<Punct> {
+    pub(crate) fn peek_punct(&mut self) -> Option<Punct> {
         let mut out = [None; 2];
 
         for (n, o) in out.iter_mut().enumerate() {
@@ -205,7 +209,7 @@ impl<'a> BaseParser<'a> {
     }
 
     /// Skip the specified punctuations and return a boolean indicating if it was skipped.
-    pub fn skip_punct(&mut self, expected: [char; 2]) -> bool {
+    pub(crate) fn skip_punct(&mut self, expected: [char; 2]) -> bool {
         if let Some(p) = self.peek_punct() {
             if p.chars == expected {
                 self.step(p.len());
@@ -217,20 +221,20 @@ impl<'a> BaseParser<'a> {
     }
 
     /// Convert the current parser into a collection of tokens it has retained.
-    pub fn into_tokens(self) -> Vec<TokenTree> {
+    pub(crate) fn into_tokens(self) -> Vec<TokenTree> {
         self.tokens
     }
 }
 
 /// A complete punctuation.
 #[derive(Debug)]
-pub struct Punct {
-    pub span: Span,
-    pub chars: [char; 2],
+pub(crate) struct Punct {
+    pub(crate) span: Span,
+    pub(crate) chars: [char; 2],
 }
 
 impl Punct {
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.chars.iter().take_while(|c| **c != '\0').count()
     }
 }

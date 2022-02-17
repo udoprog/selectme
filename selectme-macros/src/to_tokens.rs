@@ -2,7 +2,7 @@ use proc_macro::{Delimiter, Ident, Literal, Punct, Spacing, Span, TokenTree};
 
 use crate::token_stream::{Checkpoint, TokenStream};
 
-pub trait ToTokens {
+pub(crate) trait ToTokens {
     /// Convert into tokens.
     fn to_tokens(self, stream: &mut TokenStream, span: Span);
 }
@@ -119,7 +119,7 @@ where
 }
 
 /// Construct a parenthesized group `(<inner>)`.
-pub fn parens<T>(inner: T) -> impl ToTokens
+pub(crate) fn parens<T>(inner: T) -> impl ToTokens
 where
     T: ToTokens,
 {
@@ -127,7 +127,7 @@ where
 }
 
 /// Construct a braced group `{<inner>}`.
-pub fn braced<T>(inner: T) -> impl ToTokens
+pub(crate) fn braced<T>(inner: T) -> impl ToTokens
 where
     T: ToTokens,
 {
@@ -135,7 +135,7 @@ where
 }
 
 /// Construct a bracketed group `[<inner>]`.
-pub fn bracketed<T>(inner: T) -> impl ToTokens
+pub(crate) fn bracketed<T>(inner: T) -> impl ToTokens
 where
     T: ToTokens,
 {
@@ -143,7 +143,7 @@ where
 }
 
 /// Construct a group with a custom delimiter.
-pub fn group<T>(delimiter: Delimiter, inner: T) -> impl ToTokens
+pub(crate) fn group<T>(delimiter: Delimiter, inner: T) -> impl ToTokens
 where
     T: ToTokens,
 {
@@ -161,7 +161,7 @@ impl ToTokens for StringLiteral<'_> {
 }
 
 /// Construct a string literal.
-pub fn string(s: &str) -> impl ToTokens + '_ {
+pub(crate) fn string(s: &str) -> impl ToTokens + '_ {
     StringLiteral(s)
 }
 
@@ -173,7 +173,7 @@ impl ToTokens for &[TokenTree] {
     }
 }
 
-pub struct FromFn<T>(T);
+pub(crate) struct FromFn<T>(T);
 
 impl<T> ToTokens for FromFn<T>
 where
@@ -186,7 +186,7 @@ where
 }
 
 /// Construct a [ToTokens] implementation from a callback function.
-pub fn from_fn<T>(f: T) -> FromFn<T>
+pub(crate) fn from_fn<T>(f: T) -> FromFn<T>
 where
     T: FnOnce(&mut SpannedStream<'_>),
 {
@@ -205,29 +205,29 @@ where
 impl<T> Copy for FromFn<T> where T: Copy {}
 
 /// A stream that has an implicit span associated with it.
-pub struct SpannedStream<'a> {
+pub(crate) struct SpannedStream<'a> {
     stream: &'a mut TokenStream,
     span: Span,
 }
 
 impl SpannedStream<'_> {
     /// Push a single token tree.
-    pub fn push(&mut self, tt: TokenTree) {
+    pub(crate) fn push(&mut self, tt: TokenTree) {
         self.stream.push(tt);
     }
 
     /// Push the given sequence of tokens.
-    pub fn write(&mut self, tt: impl ToTokens) {
+    pub(crate) fn write(&mut self, tt: impl ToTokens) {
         self.stream.write(self.span, tt);
     }
 
     /// Get a checkpoint of the current location in the tree.
-    pub fn checkpoint(&self) -> Checkpoint {
+    pub(crate) fn checkpoint(&self) -> Checkpoint {
         self.stream.checkpoint()
     }
 
     /// Push the given stream as a group.
-    pub fn group(&mut self, delimiter: Delimiter, start: Checkpoint) {
+    pub(crate) fn group(&mut self, delimiter: Delimiter, start: Checkpoint) {
         self.stream.group(self.span, delimiter, start);
     }
 }

@@ -8,7 +8,7 @@ use crate::parsing::{BaseParser, Buf};
 use crate::parsing::{Punct, COMMA, EQ};
 
 /// A parser for the arguments provided to an entry macro.
-pub struct ConfigParser<'a> {
+pub(crate) struct ConfigParser<'a> {
     base: BaseParser<'a>,
     errors: &'a mut Vec<Error>,
 }
@@ -180,7 +180,7 @@ impl<'a> ConfigParser<'a> {
 }
 
 /// A parser for the item annotated with an entry macro.
-pub struct ItemParser<'a> {
+pub(crate) struct ItemParser<'a> {
     base: BaseParser<'a>,
 }
 
@@ -232,7 +232,7 @@ impl<'a> ItemParser<'a> {
     ///
     /// This in turn improves upon diagnostics when return types do not match.
     #[cfg(feature = "tokio-diagnostics")]
-    pub fn find_last_stmt_range(&mut self, g: &Group, tail_state: &mut TailState) {
+    pub(crate) fn find_last_stmt_range(&mut self, g: &Group, tail_state: &mut TailState) {
         let mut update = true;
 
         for tt in g.stream() {
@@ -254,5 +254,5 @@ impl<'a> ItemParser<'a> {
     }
 
     #[cfg(not(feature = "tokio-diagnostics"))]
-    pub fn find_last_stmt_range(&self, _: &Group, _: &mut TailState) {}
+    pub(crate) fn find_last_stmt_range(&self, _: &Group, _: &mut TailState) {}
 }

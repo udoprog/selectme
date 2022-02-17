@@ -11,6 +11,12 @@ impl<T> Set<T>
 where
     T: Number,
 {
+    /// Clear the given index.
+    #[inline]
+    pub fn clear(&mut self, index: u32) {
+        self.state.unset(index);
+    }
+
     /// Construct a new snapshot with the specified `value`.
     #[inline]
     pub(crate) fn new(state: T) -> Self {
@@ -29,22 +35,6 @@ where
         self.state.is_zero()
     }
 
-    /// Clear the given index.
-    #[inline]
-    pub fn clear(&mut self, index: u32) {
-        self.state.unset(index);
-    }
-
-    /// Get the next index in the set.
-    #[inline]
-    pub fn next_index(&mut self) -> Option<u32> {
-        if self.state.is_zero() {
-            return None;
-        }
-
-        Some(self.state.trailing_zeros())
-    }
-
     /// Construct an iterator over the snapshot.
     #[inline]
     pub(crate) fn iter(self) -> Iter<T> {
@@ -52,6 +42,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct Iter<T> {
     state: T,
 }

@@ -1,3 +1,4 @@
+use core::fmt;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
@@ -44,7 +45,7 @@ type StaticPoll<Bits, S, O> = fn(&mut Context<'_>, Pin<&mut S>, &mut Set<Bits>, 
 ///     }
 /// }
 ///
-/// # #[tokio::main] pub async fn main() {
+/// # #[tokio::main] pub(crate) async fn main() {
 /// let s1 = time::sleep(Duration::from_millis(100));
 /// let s2 = time::sleep(Duration::from_millis(200));
 ///
@@ -62,21 +63,16 @@ type StaticPoll<Bits, S, O> = fn(&mut Context<'_>, Pin<&mut S>, &mut Set<Bits>, 
 /// # }
 /// ```
 pub struct StaticSelect<Bits, S, B, O> {
-    snapshot: Set<Bits>,
+    enabled: Set<Bits>,
     state: S,
     bias: B,
     poll: StaticPoll<Bits, S, O>,
 }
 
 impl<Bits, S, B, O> StaticSelect<Bits, S, B, O> {
-    pub(crate) fn new(
-        snapshot: Set<Bits>,
-        bias: B,
-        state: S,
-        poll: StaticPoll<Bits, S, O>,
-    ) -> Self {
+    pub(crate) fn new(enabled: Set<Bits>, bias: B, state: S, poll: StaticPoll<Bits, S, O>) -> Self {
         Self {
-            snapshot,
+            enabled,
             state,
             bias,
             poll,
@@ -99,7 +95,7 @@ where
     /// use tokio::time;
     ///
     /// #[tokio::main]
-    /// pub async fn main() {
+    /// pub(crate) async fn main() {
     ///     let s1 = time::sleep(Duration::from_millis(100));
     ///     let s2 = time::sleep(Duration::from_millis(200));
     ///
@@ -134,9 +130,9 @@ where
             let mut state = Pin::new_unchecked(&mut this.state);
 
             // All branches are disabled.
-            for index in this.bias.apply(this.snapshot) {
+            for index in this.bias.apply(this.enabled) {
                 if let Poll::Ready(output) =
-                    (this.poll)(cx, state.as_mut(), &mut this.snapshot, index)
+                    (this.poll)(cx, state.as_mut(), &mut this.enabled, index)
                 {
                     return Poll::Ready(output);
                 }
@@ -144,8 +140,8 @@ where
 
             // We've polled through all branches (and they have been disabled
             // through pattern matching).
-            if this.snapshot.is_empty() {
-                return (this.poll)(cx, state.as_mut(), &mut this.snapshot, DISABLED);
+            if this.enabled.is_empty() {
+                return (this.poll)(cx, state.as_mut(), &mut this.enabled, DISABLED);
             }
 
             Poll::Pending
@@ -178,5 +174,20 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         unsafe { Pin::get_unchecked_mut(self).this.as_mut().poll_next(cx) }
+    }
+}
+
+impl<Bits, S, B, O> fmt::Debug for StaticSelect<Bits, S, B, O>
+where
+    Bits: Number,
+    B: fmt::Debug,
+    S: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StaticSelect")
+            .field("enabled", &self.enabled)
+            .field("state", &self.state)
+            .field("bias", &self.bias)
+            .finish()
     }
 }

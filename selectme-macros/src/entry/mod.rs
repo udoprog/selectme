@@ -1,5 +1,5 @@
 mod output;
-pub use self::output::{EntryKind, SupportsThreading};
+pub(crate) use self::output::{EntryKind, SupportsThreading};
 
 mod parser;
 

@@ -1,4 +1,4 @@
-pub fn main() {
+pub(crate) fn main() {
 }
 
 /// Empty selects are not permitted.

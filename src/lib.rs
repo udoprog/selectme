@@ -69,7 +69,7 @@
 //! }
 //!
 //! # #[tokio::main]
-//! # pub async fn main() {
+//! # pub(crate) async fn main() {
 //! let output = selectme::inline! {
 //!     output = async_operation() => Some(output),
 //!     () = time::sleep(Duration::from_secs(5)) => None,
@@ -115,7 +115,7 @@
 //!     }
 //! }
 //!
-//! # #[tokio::main] pub async fn main() {
+//! # #[tokio::main] pub(crate) async fn main() {
 //! let s1 = time::sleep(Duration::from_millis(100));
 //! let s2 = time::sleep(Duration::from_millis(200));
 //!
@@ -148,8 +148,11 @@
 //
 // See: https://github.com/tokio-rs/tokio/blob/986b88b/LICENSE
 
+#![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
+#![deny(rust_2018_idioms)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![deny(unreachable_pub)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 mod bias;

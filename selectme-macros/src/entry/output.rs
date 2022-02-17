@@ -8,29 +8,29 @@ use crate::tok::S;
 use crate::token_stream::TokenStream;
 
 #[derive(Default)]
-pub struct TailState {
-    pub block: Option<Span>,
-    pub start: Option<Span>,
-    pub end: Option<Span>,
+pub(crate) struct TailState {
+    pub(crate) block: Option<Span>,
+    pub(crate) start: Option<Span>,
+    pub(crate) end: Option<Span>,
     /// Indicates if last expression is a return.
-    pub return_: bool,
+    pub(crate) return_: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum EntryKind {
+pub(crate) enum EntryKind {
     Main,
     Test,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum SupportsThreading {
+pub(crate) enum SupportsThreading {
     Supported,
     NotSupported,
 }
 
 impl EntryKind {
     /// The name of the attribute used as the entry kind.
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         match self {
             EntryKind::Main => "tokio::main",
             EntryKind::Test => "tokio::test",
@@ -61,7 +61,7 @@ impl RuntimeFlavor {
 
 /// The parsed arguments output.
 #[derive(Debug)]
-pub struct Config {
+pub(crate) struct Config {
     pub(crate) supports_threading: SupportsThreading,
     /// The default runtime flavor to use if left unspecified.
     default_flavor: RuntimeFlavor,
@@ -74,7 +74,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(kind: EntryKind, supports_threading: SupportsThreading) -> Self {
+    pub(crate) fn new(kind: EntryKind, supports_threading: SupportsThreading) -> Self {
         Self {
             supports_threading,
             default_flavor: match (kind, supports_threading) {
@@ -88,7 +88,7 @@ impl Config {
         }
     }
 
-    pub fn validate(&self, kind: EntryKind, errors: &mut Vec<Error>) {
+    pub(crate) fn validate(&self, kind: EntryKind, errors: &mut Vec<Error>) {
         match (self.flavor(), &self.start_paused) {
             (RuntimeFlavor::Threaded, Some(tt)) => {
                 if tt.to_string() == "true" {
@@ -116,9 +116,9 @@ impl Config {
 }
 
 /// The parsed item output.
-pub struct ItemOutput {
+pub(crate) struct ItemOutput {
     tokens: Vec<TokenTree>,
-    pub has_async: bool,
+    pub(crate) has_async: bool,
     signature: Option<ops::Range<usize>>,
     block: Option<ops::Range<usize>>,
     tail_state: TailState,
@@ -142,7 +142,7 @@ impl ItemOutput {
     }
 
     /// Validate the parsed item.
-    pub fn validate(&self, kind: EntryKind, errors: &mut Vec<Error>) {
+    pub(crate) fn validate(&self, kind: EntryKind, errors: &mut Vec<Error>) {
         if !self.has_async {
             let span = self
                 .signature
@@ -159,7 +159,7 @@ impl ItemOutput {
         }
     }
 
-    pub fn block_spans(&self) -> (Span, Span) {
+    pub(crate) fn block_spans(&self) -> (Span, Span) {
         let start = self
             .tail_state
             .start
@@ -174,7 +174,12 @@ impl ItemOutput {
     }
 
     /// Expand into a function item.
-    pub fn expand_item(&self, kind: EntryKind, config: Config, start: Span) -> impl ToTokens + '_ {
+    pub(crate) fn expand_item(
+        &self,
+        kind: EntryKind,
+        config: Config,
+        start: Span,
+    ) -> impl ToTokens + '_ {
         from_fn(move |s| {
             if let (Some(signature), Some(block)) = (self.signature.clone(), self.block.clone()) {
                 let block_span = self.tail_state.block.unwrap_or_else(Span::call_site);
@@ -262,7 +267,7 @@ impl ItemOutput {
 }
 
 /// Insert the given tokens with a custom span.
-pub fn with_span<T>(inner: T, span: Span) -> impl ToTokens
+pub(crate) fn with_span<T>(inner: T, span: Span) -> impl ToTokens
 where
     T: ToTokens,
 {
@@ -282,7 +287,7 @@ where
 
 /// Construct a custom group  with a custom span that is not inherited by its
 /// children.
-pub fn group_with_span<T>(delimiter: Delimiter, inner: T, span: Span) -> impl ToTokens
+pub(crate) fn group_with_span<T>(delimiter: Delimiter, inner: T, span: Span) -> impl ToTokens
 where
     T: ToTokens,
 {

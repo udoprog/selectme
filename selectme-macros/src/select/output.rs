@@ -9,7 +9,7 @@ use crate::to_tokens::{
 use crate::tok::{self, S};
 
 /// Limit to the number of branches we support.
-pub const BRANCH_LIMIT: usize = u128::BITS as usize;
+pub(crate) const BRANCH_LIMIT: usize = u128::BITS as usize;
 
 /// The name of the output enum.
 const OUT: &str = "Out";
@@ -25,7 +25,7 @@ const MASK: &str = "mask";
 
 /// Expansion mode.
 #[derive(Debug, Clone, Copy)]
-pub enum Mode {
+pub(crate) enum Mode {
     Default,
     Inline,
 }
@@ -37,7 +37,7 @@ pub(crate) enum SelectKind {
 }
 
 /// The parsed output.
-pub struct Output {
+pub(crate) struct Output {
     tokens: Vec<TokenTree>,
     mode: Mode,
     krate: ops::Range<usize>,
@@ -379,7 +379,7 @@ impl Output {
     }
 
     /// Expand a select which is awaited immediately.
-    pub fn expand(self) -> impl ToTokens {
+    pub(crate) fn expand(self) -> impl ToTokens {
         from_fn(move |s| match self.mode {
             Mode::Default => {
                 s.write(braced(from_fn(move |s| {

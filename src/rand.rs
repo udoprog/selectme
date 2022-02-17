@@ -62,7 +62,7 @@ impl FastRand {
 }
 
 // Used by the select macro.
-pub fn thread_rng_n(n: u32) -> u32 {
+pub(crate) fn thread_rng_n(n: u32) -> u32 {
     thread_local! {
         static THREAD_RNG: FastRand = FastRand::new(seed());
     }

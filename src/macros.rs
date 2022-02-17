@@ -345,7 +345,7 @@ macro_rules! select {
 ///
 /// ```compile_fail
 /// # #[tokio::main]
-/// # pub async fn main() {
+/// # pub(crate) async fn main() {
 /// let s1 = std::future::ready(());
 ///
 /// loop {
@@ -370,7 +370,7 @@ macro_rules! select {
 /// }
 ///
 /// # #[tokio::main]
-/// # pub async fn main() {
+/// # pub(crate) async fn main() {
 /// let output = selectme::inline! {
 ///     output = async_operation() => Some(output),
 ///     () = time::sleep(Duration::from_secs(5)) => None,
@@ -422,7 +422,7 @@ macro_rules! select {
 ///     }
 /// }
 ///
-/// # #[tokio::main] pub async fn main() {
+/// # #[tokio::main] pub(crate) async fn main() {
 /// let s1 = time::sleep(Duration::from_millis(100));
 /// let s2 = time::sleep(Duration::from_millis(200));
 ///
@@ -448,7 +448,7 @@ macro_rules! select {
 /// use std::time::Duration;
 /// use tokio::time;
 ///
-/// # #[tokio::main] pub async fn main() {
+/// # #[tokio::main] pub(crate) async fn main() {
 /// let s1 = time::sleep(Duration::from_millis(100));
 /// let s2 = time::sleep(Duration::from_millis(200));
 ///
