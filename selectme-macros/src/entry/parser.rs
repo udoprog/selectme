@@ -1,4 +1,4 @@
-use proc_macro::{Delimiter, Literal, Span, TokenTree};
+use proc_macro::{Delimiter, Literal, Spacing, Span, TokenTree};
 
 use crate::entry::output::{Config, EntryKind, ItemOutput, RuntimeFlavor, SupportsThreading};
 use crate::error::Error;
@@ -202,50 +202,47 @@ impl<'a> ItemParser<'a> {
         let mut non_empty_args = None;
 
         while let Some(tt) = self.base.bump() {
-            match tt {
-                TokenTree::Ident(ident) => {
-                    match self.base.buf.display_as_str(&ident) {
-                        "async" => {
-                            if async_keyword.is_none() {
-                                async_keyword = Some(self.base.len());
-                            }
-                        }
-                        "fn" => {
-                            if fn_name.is_none() {
-                                next_is_name = true;
-                            }
-                        }
-                        _ => {
-                            if std::mem::take(&mut next_is_name) {
-                                fn_name = Some(self.base.len());
-                            }
+            match &tt {
+                TokenTree::Ident(ident) => match self.base.buf.display_as_str(&ident) {
+                    "async" => {
+                        if async_keyword.is_none() {
+                            async_keyword = Some(self.base.len());
                         }
                     }
-
-                    self.base.push(TokenTree::Ident(ident));
-                }
-                TokenTree::Group(g) => {
-                    match g.delimiter() {
-                        Delimiter::Parenthesis if !has_args && fn_name.is_some() => {
-                            has_args = true;
-
-                            if !g.stream().is_empty() {
-                                non_empty_args = Some(g.span());
-                            }
+                    "fn" => {
+                        if fn_name.is_none() {
+                            next_is_name = true;
                         }
-                        Delimiter::Brace if block.is_none() => {
-                            signature = Some(start..self.base.len());
-                            block = Some(self.base.len());
-                        }
-                        _ => {}
                     }
+                    _ => {
+                        if std::mem::take(&mut next_is_name) {
+                            fn_name = Some(self.base.len());
+                        }
+                    }
+                },
+                TokenTree::Group(g) => match g.delimiter() {
+                    Delimiter::Parenthesis if !has_args && fn_name.is_some() => {
+                        has_args = true;
 
-                    self.base.push(TokenTree::Group(g));
-                }
-                tt => {
+                        if !g.stream().is_empty() {
+                            non_empty_args = Some(g.span());
+                        }
+                    }
+                    Delimiter::Brace if block.is_none() => {
+                        signature = Some(start..self.base.len());
+                        block = Some(self.base.len());
+                    }
+                    _ => {}
+                },
+                TokenTree::Punct(p) if p.as_char() == '<' && p.spacing() == Spacing::Alone => {
                     self.base.push(tt);
+                    self.skip_angle_brackets();
+                    continue;
                 }
+                _ => {}
             }
+
+            self.base.push(tt);
         }
 
         let tokens = self.base.into_tokens();
@@ -258,5 +255,29 @@ impl<'a> ItemParser<'a> {
             block,
             non_empty_args,
         )
+    }
+
+    /// Since generics are implemented using angle brackets.
+    fn skip_angle_brackets(&mut self) {
+        // NB: one bracket encountered already.
+        let mut level = 1u32;
+
+        while let Some(tt) = self.base.bump() {
+            match &tt {
+                TokenTree::Punct(p) if p.as_char() == '<' && p.spacing() == Spacing::Alone => {
+                    level += 1;
+                }
+                TokenTree::Punct(p) if p.as_char() == '>' && p.spacing() == Spacing::Alone => {
+                    level -= 1;
+                }
+                _ => {}
+            }
+
+            self.base.push(tt);
+
+            if level == 0 {
+                break;
+            }
+        }
     }
 }
