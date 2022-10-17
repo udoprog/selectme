@@ -3,14 +3,15 @@ name = "selectme-macros"
 version = "0.7.0"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
-license = "MIT/Apache-2.0"
-readme = "../README.md"
-repository = "https://github.com/udoprog/selectme"
-homepage = "https://github.com/udoprog/selectme"
-documentation = "https://docs.rs/selectme"
 description = """
 A fast and fair select! macro for asynchronous Rust.
 """
+documentation = "https://docs.rs/selectme"
+readme = "README.md"
+homepage = "https://github.com/udoprog/selectme"
+repository = "https://github.com/udoprog/selectme"
+license = "MIT/Apache-2.0"
+keywords = ["select", "tokio"]
 categories = ["asynchronous", "concurrency"]
 
 [features] 
