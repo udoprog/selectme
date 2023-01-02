@@ -1,6 +1,6 @@
 [package]
 name = "selectme"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
 description = "A fast and fair select! macro for asynchronous Rust."
@@ -19,7 +19,7 @@ random = []
 tokio-entry = ["selectme-macros/tokio-entry"]
 
 [dependencies]
-selectme-macros = { path = "selectme-macros", version = "0.7.0" }
+selectme-macros = { path = "selectme-macros", version = "0.7.1" }
 
 [dev-dependencies]
 trybuild = "1.0"
