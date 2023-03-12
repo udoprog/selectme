@@ -4,4 +4,4 @@ error: `select!` must not be empty, consider replacing with `future::pending::<(
 6 |     selectme::select! {}
   |     ^^^^^^^^^^^^^^^^^^^^
   |
-  = note: this error originates in the macro `$crate::__support::select` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `$crate::__support::select` which comes from the expansion of the macro `selectme::select` (in Nightly builds, run with -Z macro-backtrace for more info)

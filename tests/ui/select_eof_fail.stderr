@@ -16,7 +16,7 @@ error: expected branch expression followed by `=>`
 8 |     selectme::select! { binding = };
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   |
-  = note: this error originates in the macro `$crate::__support::select` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `$crate::__support::select` which comes from the expansion of the macro `selectme::select` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: expected branch expression followed by `=>`
  --> tests/ui/select_eof_fail.rs:9:35
@@ -30,4 +30,4 @@ error: expected braced group or expression followed by `,`
 10 |     selectme::select! { binding = expr => };
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: this error originates in the macro `$crate::__support::select` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__support::select` which comes from the expansion of the macro `selectme::select` (in Nightly builds, run with -Z macro-backtrace for more info)

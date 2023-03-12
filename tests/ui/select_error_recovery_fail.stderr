@@ -2,7 +2,7 @@ error: binding must be followed by a `=`
  --> tests/ui/select_error_recovery_fail.rs:8:17
   |
 8 |         binding => {}
-  |                 ^^
+  |                 ^
 
 error: binding must be followed by a `=`
   --> tests/ui/select_error_recovery_fail.rs:12:21

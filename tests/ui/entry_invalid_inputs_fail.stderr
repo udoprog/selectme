@@ -51,3 +51,11 @@ error: the `worker_threads` option requires the "multi_thread" runtime flavor. U
    |
 33 | #[selectme::test(flavor = "current_thread", worker_threads = 4)]
    |                                                              ^
+
+warning: duplicated attribute
+  --> tests/ui/entry_invalid_inputs_fail.rs:37:1
+   |
+37 | #[test]
+   | ^^^^^^^
+   |
+   = note: `#[warn(duplicate_macro_attributes)]` on by default

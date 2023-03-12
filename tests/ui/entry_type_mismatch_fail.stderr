@@ -24,7 +24,7 @@ error[E0308]: mismatched types
 14 |   async fn extra_semicolon() -> Result<(), ()> {
    |  ______________________________________________^
 15 | |     Ok(());
-   | |           - help: consider removing this semicolon
+   | |           - help: remove this semicolon to return this value
 16 | | }
    | |_^ expected enum `Result`, found `()`
    |
