@@ -1,7 +1,7 @@
 use std::future::ready;
 
 pub(crate) fn main() {
-    let _ = test();
+    drop(test());
 }
 
 async fn test() {

@@ -7,11 +7,11 @@
 //!
 //! [selectme]: https://docs.rs/selectme
 
-#![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 #![deny(rust_2018_idioms)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(unreachable_pub)]
+#![allow(clippy::needless_doctest_main)]
 
 use proc_macro::TokenStream;
 

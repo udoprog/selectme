@@ -25,7 +25,7 @@ pub(crate) fn build(
 
     config.validate(kind, &mut errors);
 
-    let item = parser::ItemParser::new(item_stream.clone(), &mut buf);
+    let item = parser::ItemParser::new(item_stream, &mut buf);
     let item = item.parse();
 
     item.validate(kind, &mut errors);

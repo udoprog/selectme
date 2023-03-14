@@ -82,20 +82,14 @@ impl Config {
     }
 
     pub(crate) fn validate(&self, kind: EntryKind, errors: &mut Vec<Error>) {
-        match (self.flavor(), &self.start_paused) {
-            (RuntimeFlavor::Threaded, Some(tt)) => {
-                if tt.to_string() == "true" {
-                    errors.push(Error::new(tt.span(), format!("the `start_paused` option requires the \"current_thread\" runtime flavor. Use `#[{}(flavor = \"current_thread\")]`", kind.name())));
-                }
+        if let (RuntimeFlavor::Threaded, Some(tt)) = (self.flavor(), &self.start_paused) {
+            if tt.to_string() == "true" {
+                errors.push(Error::new(tt.span(), format!("the `start_paused` option requires the \"current_thread\" runtime flavor. Use `#[{}(flavor = \"current_thread\")]`", kind.name())));
             }
-            _ => {}
         }
 
-        match (self.flavor(), &self.worker_threads) {
-            (RuntimeFlavor::CurrentThread, Some(tt)) => {
-                errors.push(Error::new(tt.span(), format!("the `worker_threads` option requires the \"multi_thread\" runtime flavor. Use `#[{}(flavor = \"multi_thread\")]`", kind.name())));
-            }
-            _ => {}
+        if let (RuntimeFlavor::CurrentThread, Some(tt)) = (self.flavor(), &self.worker_threads) {
+            errors.push(Error::new(tt.span(), format!("the `worker_threads` option requires the \"multi_thread\" runtime flavor. Use `#[{}(flavor = \"multi_thread\")]`", kind.name())));
         }
     }
 

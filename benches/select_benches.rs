@@ -1,16 +1,14 @@
-#![feature(test)]
-#![feature(maybe_uninit_uninit_array, maybe_uninit_array_assume_init)]
-
-extern crate test;
-
 use std::mem::MaybeUninit;
 use std::thread;
 
+use criterion::Criterion;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 
-use test::bench::Bencher;
 use tokio::sync::oneshot;
+
+criterion::criterion_group!(benches, tokio_select, selectme_select);
+criterion::criterion_main!(benches);
 
 const COUNT: usize = 64;
 const ITERATIONS: usize = 10;
@@ -22,8 +20,8 @@ struct Scenario {
 impl Scenario {
     /// Setup the current scenario.
     fn build(&self) -> ([oneshot::Receiver<()>; COUNT], [oneshot::Sender<()>; COUNT]) {
-        let mut polls = MaybeUninit::uninit_array::<COUNT>();
-        let mut triggers = MaybeUninit::uninit_array::<COUNT>();
+        let mut polls = uninit_array::<_, COUNT>();
+        let mut triggers = uninit_array::<_, COUNT>();
 
         for (p, index) in polls.iter_mut().zip(self.timings.iter()) {
             let (tx, rx) = oneshot::channel::<()>();
@@ -32,8 +30,8 @@ impl Scenario {
         }
 
         unsafe {
-            let polls = MaybeUninit::array_assume_init(polls);
-            let triggers = MaybeUninit::array_assume_init(triggers);
+            let polls = array_assume_init(polls);
+            let triggers = array_assume_init(triggers);
             (polls, triggers)
         }
     }
@@ -127,56 +125,58 @@ macro_rules! test {
     }
 }
 
-#[bench]
-fn tokio_select(b: &mut Bencher) {
+fn tokio_select(b: &mut Criterion) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .build()
         .expect("failed to construct runtime");
 
     let scenarios = build_scenarios();
 
-    b.iter(|| {
-        runtime.block_on(async {
-            for scenario in &scenarios {
-                let (polls, triggers) = scenario.build();
-                let poller = test!(tokio::select, polls);
+    b.bench_function("tokio_select", |b| {
+        b.iter(|| {
+            runtime.block_on(async {
+                for scenario in &scenarios {
+                    let (polls, triggers) = scenario.build();
+                    let poller = test!(tokio::select, polls);
 
-                let t = thread::spawn(move || {
-                    for t in triggers {
-                        let _ = t.send(());
-                    }
-                });
+                    let t = thread::spawn(move || {
+                        for t in triggers {
+                            let _ = t.send(());
+                        }
+                    });
 
-                let _ = poller.await;
-                t.join().unwrap();
-            }
+                    let _ = poller.await;
+                    t.join().unwrap();
+                }
+            });
         });
     });
 }
 
-#[bench]
-fn selectme_select(b: &mut Bencher) {
+fn selectme_select(b: &mut Criterion) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .build()
         .expect("failed to construct runtime");
 
     let scenarios = build_scenarios();
 
-    b.iter(|| {
-        runtime.block_on(async {
-            for scenario in &scenarios {
-                let (polls, triggers) = scenario.build();
-                let poller = test!(selectme::select, polls);
+    b.bench_function("selectme_select", |b| {
+        b.iter(|| {
+            runtime.block_on(async {
+                for scenario in &scenarios {
+                    let (polls, triggers) = scenario.build();
+                    let poller = test!(selectme::select, polls);
 
-                let t = thread::spawn(move || {
-                    for t in triggers {
-                        let _ = t.send(());
-                    }
-                });
+                    let t = thread::spawn(move || {
+                        for t in triggers {
+                            let _ = t.send(());
+                        }
+                    });
 
-                let _ = tokio::join!(poller);
-                t.join().unwrap();
-            }
+                    let _ = tokio::join!(poller);
+                    t.join().unwrap();
+                }
+            });
         });
     });
 }
@@ -206,4 +206,23 @@ fn build_scenarios() -> Vec<Scenario> {
     }
 
     scenarios
+}
+
+pub fn uninit_array<T, const N: usize>() -> [MaybeUninit<T>; N] {
+    // SAFETY: An uninitialized `[MaybeUninit<_>; LEN]` is valid.
+    unsafe { MaybeUninit::<[MaybeUninit<T>; N]>::uninit().assume_init() }
+}
+
+#[allow(clippy::missing_safety_doc)]
+pub unsafe fn array_assume_init<T, const N: usize>(array: [MaybeUninit<T>; N]) -> [T; N] {
+    // SAFETY:
+    // * The caller guarantees that all elements of the array are initialized
+    // * `MaybeUninit<T>` and T are guaranteed to have the same layout
+    // * `MaybeUninit` does not drop, so there are no double-frees
+    // And thus the conversion is safe
+    let ret = (&array as *const _ as *const [T; N]).read();
+
+    // FIXME: required to avoid `~const Destruct` bound
+    std::mem::forget(array);
+    ret
 }

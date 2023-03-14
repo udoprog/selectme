@@ -1,3 +1,4 @@
+#[rustversion::since(1.68)]
 #[test]
 fn ui() {
     let t = trybuild::TestCases::new();

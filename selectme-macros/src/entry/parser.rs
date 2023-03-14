@@ -106,10 +106,8 @@ impl<'a> ConfigParser<'a> {
                             ident.span(),
                             "the `flavor` option must only be used once",
                         ));
-                        self.errors.push(Error::new(
-                            existing.clone(),
-                            "first use of the `flavor` here",
-                        ));
+                        self.errors
+                            .push(Error::new(*existing, "first use of the `flavor` here"));
                     }
 
                     config.flavor = Some((ident.span(), flavor));
@@ -203,7 +201,7 @@ impl<'a> ItemParser<'a> {
 
         while let Some(tt) = self.base.bump() {
             match &tt {
-                TokenTree::Ident(ident) => match self.base.buf.display_as_str(&ident) {
+                TokenTree::Ident(ident) => match self.base.buf.display_as_str(ident) {
                     "async" => {
                         if async_keyword.is_none() {
                             async_keyword = Some(self.base.len());
