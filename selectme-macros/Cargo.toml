@@ -15,6 +15,10 @@ license = "MIT/Apache-2.0"
 keywords = ["select", "tokio"]
 categories = ["asynchronous", "concurrency"]
 
+[dev-dependencies]
+selectme = { version = "0.7.1", path = ".." }
+tokio = { version = "1.16.1", features = ["macros", "time", "rt", "rt-multi-thread", "test-util"] }
+
 [features] 
 tokio-entry = []
 

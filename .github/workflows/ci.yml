@@ -21,7 +21,6 @@ jobs:
     - run: cargo test --workspace --all-targets --all-features
     - run: cargo test --workspace --all-targets --no-default-features
     - run: cargo test --workspace --doc --all-features
-    - run: cargo test --workspace --doc --no-default-features
 
   clippy:
     runs-on: ubuntu-latest
@@ -40,3 +39,13 @@ jobs:
       with:
         components: rustfmt
     - run: cargo fmt --check --all
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo doc --workspace --all-features
+      env:
+        RUSTFLAGS: --cfg docsrs
+        RUSTDOCFLAGS: --cfg docsrs
