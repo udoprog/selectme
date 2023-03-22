@@ -1,6 +1,6 @@
 [package]
 name = "selectme-macros"
-version = "0.7.2"
+version = "0.7.3"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
 rust-version = "1.56"
@@ -16,7 +16,7 @@ keywords = ["select", "tokio"]
 categories = ["asynchronous", "concurrency"]
 
 [dev-dependencies]
-selectme = { version = "0.7.2", path = ".." }
+selectme = { version = "=0.7.3", path = ".." }
 tokio = { version = "1.16.1", features = ["macros", "time", "rt", "rt-multi-thread", "test-util"] }
 
 [features] 
