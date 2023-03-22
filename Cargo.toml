@@ -1,6 +1,6 @@
 [package]
 name = "selectme"
-version = "0.7.1"
+version = "0.7.2"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
 rust-version = "1.56"
@@ -20,7 +20,7 @@ random = []
 tokio-entry = ["selectme-macros/tokio-entry"]
 
 [dependencies]
-selectme-macros = { path = "selectme-macros", version = "0.7.1" }
+selectme-macros = { path = "selectme-macros", version = "=0.7.2" }
 
 [dev-dependencies]
 trybuild = "1.0"
