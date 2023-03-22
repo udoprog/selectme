@@ -13,7 +13,7 @@
 //! Add the following to your `Cargo.toml`:
 //!
 //! ```toml
-//! selectme = "0.7.1"
+//! selectme = "0.7.2"
 //! ```
 //!
 //! <br>
