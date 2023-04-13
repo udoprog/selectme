@@ -23,11 +23,11 @@ tokio-entry = ["selectme-macros/tokio-entry"]
 selectme-macros = { version = "=0.7.3", path = "selectme-macros" }
 
 [dev-dependencies]
-trybuild = "1.0"
-tokio = { version = "1.16.1", features = ["macros", "time", "rt", "rt-multi-thread"] }
-tokio-stream = "0.1.8"
+trybuild = "1.0.80"
+tokio = { version = "1.27.0", features = ["macros", "time", "rt", "rt-multi-thread"] }
+tokio-stream = "0.1.12"
 rand = "0.8.5"
-pin-project = "1.0.10"
+pin-project = "1.0.12"
 criterion = "0.4.0"
 rustversion = "1.0.12"
 

@@ -17,7 +17,7 @@ categories = ["asynchronous", "concurrency"]
 
 [dev-dependencies]
 selectme = { version = "=0.7.3", path = ".." }
-tokio = { version = "1.16.1", features = ["macros", "time", "rt", "rt-multi-thread", "test-util"] }
+tokio = { version = "1.27.0", features = ["macros", "time", "rt", "rt-multi-thread", "test-util"] }
 
 [features] 
 tokio-entry = []
