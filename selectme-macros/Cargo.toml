@@ -11,7 +11,7 @@ documentation = "https://docs.rs/selectme"
 readme = "README.md"
 homepage = "https://github.com/udoprog/selectme"
 repository = "https://github.com/udoprog/selectme"
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 keywords = ["select", "tokio"]
 categories = ["asynchronous", "concurrency"]
 
