@@ -18,7 +18,7 @@ jobs:
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{matrix.rust}}
-    - run: cargo build
+    - run: cargo build -p selectme -p selectme-macros
     - run: cargo test --workspace --all-targets --all-features
       if: matrix.rust == 'stable'
     - run: cargo test --workspace --all-targets --no-default-features
