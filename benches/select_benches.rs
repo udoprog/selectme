@@ -220,9 +220,5 @@ pub unsafe fn array_assume_init<T, const N: usize>(array: [MaybeUninit<T>; N]) -
     // * `MaybeUninit<T>` and T are guaranteed to have the same layout
     // * `MaybeUninit` does not drop, so there are no double-frees
     // And thus the conversion is safe
-    let ret = (&array as *const _ as *const [T; N]).read();
-
-    // FIXME: required to avoid `~const Destruct` bound
-    std::mem::forget(array);
-    ret
+    (&array as *const _ as *const [T; N]).read()
 }
