@@ -3,7 +3,7 @@ name = "selectme-macros"
 version = "0.7.3"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
-rust-version = "1.56"
+rust-version = "1.64"
 description = """
 A fast and fair select! macro for asynchronous Rust.
 """
