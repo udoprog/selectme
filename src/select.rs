@@ -51,7 +51,6 @@ pub const DISABLED: u32 = u32::MAX;
 /// dbg!(inlined_var);
 /// # }
 /// ```
-
 pub struct Select<Bits, S, B, T> {
     enabled: Set<Bits>,
     state: S,
