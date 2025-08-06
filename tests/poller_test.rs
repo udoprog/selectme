@@ -63,7 +63,7 @@ async fn poller_test() {
                             return Poll::Ready(4);
                         }
                         n => {
-                            panic!("no branch with index `{}`", n);
+                            panic!("no branch with index `{n}`");
                         }
                     }
 

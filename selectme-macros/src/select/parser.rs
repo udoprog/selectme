@@ -83,7 +83,7 @@ impl<'a> Parser<'a> {
                     other => {
                         self.errors.push(Error::new(
                             ident.span(),
-                            format!("unsupported option `{}`", other),
+                            format!("unsupported option `{other}`"),
                         ));
                     }
                 },
@@ -375,7 +375,7 @@ impl<'a> Parser<'a> {
         let block = self.parse_block()?;
 
         let condition = condition.map(|range| Condition {
-            var: format!("__cond{}", index).into(),
+            var: format!("__cond{index}").into(),
             range,
         });
 
@@ -384,8 +384,8 @@ impl<'a> Parser<'a> {
             binding,
             expr,
             block,
-            generic: format!("T{}", index).into(),
-            variant: format!("Branch{}", index).into(),
+            generic: format!("T{index}").into(),
+            variant: format!("Branch{index}").into(),
             condition,
         };
 

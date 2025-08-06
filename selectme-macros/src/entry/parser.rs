@@ -123,7 +123,7 @@ impl<'a> ConfigParser<'a> {
                     None
                 }
                 name => {
-                    self.errors.push(Error::new(ident.span(), format!("unknown option `{}`, expected one of: `flavor`, `worker_threads`, `start_paused`", name)));
+                    self.errors.push(Error::new(ident.span(), format!("unknown option `{name}`, expected one of: `flavor`, `worker_threads`, `start_paused`")));
                     None
                 }
             },

@@ -87,7 +87,7 @@ impl Buf {
         use std::fmt::Write;
 
         self.string.clear();
-        let _ = write!(&mut self.string, "{}", value);
+        let _ = write!(&mut self.string, "{value}");
         self.string.as_str()
     }
 
