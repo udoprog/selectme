@@ -3,7 +3,7 @@ name = "selectme"
 version = "0.7.3"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
-rust-version = "1.64"
+rust-version = "1.71"
 description = "A fast and fair select! macro for asynchronous Rust."
 documentation = "https://docs.rs/selectme"
 readme = "README.md"
@@ -26,9 +26,9 @@ selectme-macros = { version = "=0.7.3", path = "selectme-macros" }
 trybuild = "1.0.80"
 tokio = { version = "1.27.0", features = ["macros", "time", "rt", "rt-multi-thread"] }
 tokio-stream = "0.1.12"
-rand = "0.8.5"
+rand = "0.10.3"
 pin-project = "1.0.12"
-criterion = "0.4.0"
+criterion = "0.8.2"
 rustversion = "1.0.12"
 
 [workspace]

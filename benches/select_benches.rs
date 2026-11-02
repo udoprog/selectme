@@ -3,7 +3,7 @@ use std::thread;
 
 use criterion::Criterion;
 use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use tokio::sync::oneshot;
 
@@ -190,7 +190,7 @@ fn build_scenarios() -> Vec<Scenario> {
         let mut source = [(0, 0); COUNT];
 
         for (n, t) in source.iter_mut().enumerate() {
-            t.0 = rng.gen::<u32>();
+            t.0 = rng.random::<u32>();
             t.1 = n;
         }
 

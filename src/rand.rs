@@ -4,7 +4,7 @@
 
 use std::cell::Cell;
 use std::collections::hash_map::RandomState;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::BuildHasher;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -71,13 +71,5 @@ pub(crate) fn thread_rng_n(n: u32) -> u32 {
 }
 
 pub(crate) fn seed() -> u64 {
-    let rand_state = RandomState::new();
-
-    let mut hasher = rand_state.build_hasher();
-
-    // Hash some unique-ish data to generate some new state
-    COUNTER.fetch_add(1, Relaxed).hash(&mut hasher);
-
-    // Get the seed
-    hasher.finish()
+    RandomState::new().hash_one(COUNTER.fetch_add(1, Relaxed))
 }
